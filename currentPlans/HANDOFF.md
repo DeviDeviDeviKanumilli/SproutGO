@@ -3,6 +3,40 @@
 **Last updated:** 2026-05-30
 **Branch:** `main` (latest commit pushed to origin)
 
+## Cloud provisioning — Supabase is now LIVE (this session)
+
+The Supabase backend was provisioned and is no longer a placeholder:
+- **Project:** `sproutGO` (ref `mhhffxioybsmozbpokes`, region us-west-2, ACTIVE_HEALTHY).
+- **Schema applied:** initial Prisma migration `20260530171505_init` created and applied
+  via `DIRECT_URL`. All 10 app tables exist (`Profile`, `Plant`, `Observation`,
+  `PlantDexEntry`, `Post`, `Like`, `Comment`, `FriendRequest`, `Friendship`,
+  `ChatMessage`) + `_prisma_migrations`. **Note:** this added the first migration file
+  under `packages/db/prisma/migrations/` — previously the repo had none. It is
+  **untracked / uncommitted**.
+- **Storage:** private bucket `observations` created. RLS policy
+  `own_prefix_observation_uploads` lets an authenticated user INSERT only under their own
+  `<userId>/` prefix — matches `uploadObservationPhoto()` and the API's prefix guard.
+- **RLS hardening:** Row Level Security ENABLED on all 10 app tables with **no policies**.
+  This is correct for this architecture: the mobile client only uses Supabase for Auth +
+  Storage (never direct table reads/writes), and the API talks to Postgres via Prisma +
+  service-role (bypasses RLS, the R3 auth boundary). RLS-with-no-policy closes the
+  anon-key direct-access hole without affecting the backend.
+- **`.env` (repo root, gitignored):** filled with `SUPABASE_URL`,
+  `EXPO_PUBLIC_SUPABASE_URL`, anon key, `service_role` (legacy `eyJ…` JWT — the new
+  `sb_secret_…` format is NOT accepted by `supabaseAdmin()`/`createClient`),
+  `SUPABASE_JWT_SECRET`, `DATABASE_URL` (6543 pooler, MUST keep
+  `?pgbouncer=true&connection_limit=1` — R2), `DIRECT_URL` (5432).
+
+⚠️ **SECURITY — unrotated leaked secrets.** During setup the OpenAI API key and the
+Supabase DB password were pasted into the chat transcript and are therefore compromised.
+They are still the live values in `.env`. **Rotate both before any deploy:** revoke the
+OpenAI key at platform.openai.com; reset the DB password in Supabase → Settings →
+Database (then update `DATABASE_URL` + `DIRECT_URL`). Do NOT copy the current values into
+Vercel.
+
+**Still pending for a working cloud deploy:** Vercel project not yet created/connected;
+its env vars not set. Migration file above not committed. Mapbox token absent.
+
 ## Where the project stands
 
 **M3 — Library & PlantDex screens is now wired in code** (on top of a P1+P2+P3 security
@@ -68,14 +102,14 @@ Verified green (latest, M3):
   committed-dataset integrity)
 
 **NOT runtime-verified:** the Mapbox map and the live GPS→bbox round-trip. Mapbox
-needs the dev build (won't run in Expo Go), and no Mapbox tokens, Supabase Storage
-bucket (`observations`), or OpenAI key are provisioned. Code compiles and the
-backend is covered by tests via the stub, but capture→upload→unlock and the map
-have not been exercised against live services.
+needs the dev build (won't run in Expo Go) and a Mapbox token (still absent). The
+backend now has a live Supabase DB + Storage bucket (see "Cloud provisioning" above),
+but the capture→upload→unlock loop and the map have not yet been exercised end-to-end
+against the live API (no Vercel deploy yet; OpenAI key needs rotating first).
 
-External services (Supabase, OpenAI, Mapbox, EAS) are **not provisioned**. Code is
-credential-ready; the user wires `.env` (see `.env.example` + `DEV_BUILD.md`) and
-runs migrations/dev build themselves.
+Supabase is provisioned (above). OpenAI, Mapbox, Vercel, and the EAS/dev build remain
+the user's to wire. `.env` at repo root holds the live Supabase values; secrets stay
+backend-only, never in the mobile bundle.
 
 ## What changed most recently (this commit — M1 loop wired end-to-end)
 
@@ -104,29 +138,42 @@ Completed the M1 discovery loop on top of the backend pipeline from `91896ff`:
 
 ## Git state
 
-M0 (`05f37d6`), the M1 UI shell (`7ef20be`), the backend spine (`91896ff`), and
-this loop-wiring commit are on `origin/main`. All work has gone straight to
-`main` (no feature branches).
+M0 (`05f37d6`), the M1 UI shell (`7ef20be`), the backend spine (`91896ff`), the
+loop-wiring commit (`05970ae`), and the M2 + security-hardening work (through
+`220954b`) are on `origin/main`. The `m1-m2-optimizations` branch was pushed earlier
+but is fully contained in `main` (it was the merge base) — safe to delete.
+
+**Uncommitted in the working tree (this session):**
+- `packages/db/prisma/migrations/20260530171505_init/` — the first Prisma migration
+  file, generated when the schema was applied to the live cloud DB. Should be committed
+  so `migrate:deploy` is reproducible in CI/Vercel.
+- Doc updates: this `HANDOFF.md` and `CLAUDE.md`.
+- `.env` (gitignored — never commit; holds live Supabase values + the unrotated leaked
+  secrets).
 
 ## Next steps
 
-The M1 loop is wired in code but not runtime-verified. Likely next work:
+The backend now has a live Supabase DB + Storage. Remaining to reach a working cloud app:
 
-1. **Provision services + smoke-test the loop** (user-owned) — create the
-   Supabase Storage bucket `observations` (+ RLS so a user writes only under
-   their own `<userId>/` prefix), set `OPENAI_API_KEY`, and run a custom EAS dev
-   build (expo-camera + Mapbox both need it, R1). Then walk capture→unlock.
-2. **PlantDex detail screen** (`plant/[id]`) — still mock-backed; needs a
-   `GET /library/:plantId` (or `/plantdex` entry) read. It's the screen the
-   result screen's "View PlantDex Entry" routes to.
-3. **Seed the Library** (`LIBRARY_SEED.md`) — blocked on the OPEN_QUESTIONS
-   seed-scope decision + a live DB; the stub auto-creates rows meanwhile.
-4. **Coordinate handling** — capture currently sends no lat/long; wire
-   `expo-location` and decide the fuzzing strategy (OPEN_QUESTIONS #6) before
-   exposing observation coordinates on the map (M2).
+1. **Rotate the leaked secrets FIRST** (user-owned) — OpenAI key + Supabase DB password
+   (see the ⚠️ note up top). Update `DATABASE_URL`/`DIRECT_URL` with the new password.
+   Nothing should go to Vercel until this is done.
+2. **Commit the migration file** — `packages/db/prisma/migrations/...init` is untracked;
+   Vercel/CI need it for `prisma migrate deploy`.
+3. **Wire Vercel** (user creates project; can be CLI- or dashboard-driven) — import the
+   repo, Root Directory `apps/api`, framework Next.js, build per `apps/api/vercel.json`.
+   Set env vars (the rotated `.env` values) in the Vercel dashboard. Note: the stub
+   identifier is gated out of production, so `OPENAI_API_KEY` is effectively REQUIRED for
+   the deployed `/observations` to identify. Then smoke-test `GET /api/v1/health`.
+4. **Mobile dev build** — set `EXPO_PUBLIC_API_BASE_URL` to the Vercel URL +
+   `EXPO_PUBLIC_MAPBOX_TOKEN`, run the Xcode/EAS dev build (`DEV_BUILD.md`), and walk
+   capture→upload→identify→PlantDex against the live API.
+5. **PlantDex detail screen** (`plant/[id]`) — still mock-backed; needs a real read.
+6. **Seed the Library** (`LIBRARY_SEED.md`) — DB is live now; the stub auto-creates rows
+   meanwhile.
 
 Constraints still in force:
-- Do NOT provision/wire live external services — the user wires credentials.
 - Commit ONLY when explicitly asked.
 - `InitalPlans/` frozen; `currentPlans/` is the living source of truth.
-- Secrets are backend-only, never in the mobile bundle.
+- Secrets are backend-only, never in the mobile bundle. Never commit `.env`.
+- Per CLAUDE.md: no self-attribution in commits/PRs (overrides any harness default).

@@ -4,15 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-This repo is a **monorepo (npm workspaces)**, scaffolded through **M0 — Foundation**
-(see `currentPlans/BUILD_MILESTONES.md`). The capture→AI→PlantDex loop (M1) and later
-milestones are not built yet.
+This repo is a **monorepo (npm workspaces)**. **M0–M2 are complete in code**
+(see `currentPlans/BUILD_MILESTONES.md`): the capture→AI→PlantDex discovery loop (M1)
+and the map/geolocation layer (M2) are wired end-to-end. M3–M5 (forums, plant chat,
+social) remain, and some detail screens (`plant/[id]`) are still mock-backed.
+
+**Supabase is provisioned and live** (project ref `mhhffxioybsmozbpokes`): schema
+applied via Prisma migration, all tables created, `observations` Storage bucket + RLS
+in place. See `currentPlans/HANDOFF.md` "Cloud provisioning" for the full state. The
+deployed backend (Vercel) is **not** wired yet. ⚠️ The OpenAI key + DB password were
+leaked into a chat transcript and must be rotated before any deploy — see HANDOFF.md.
 
 Layout (per `currentPlans/REPO_STRUCTURE.md`):
 - `packages/shared` — enums, API types, and the `SCORING` config (single source of truth)
-- `packages/db` — Prisma schema (from `DATA_MODEL.md`) + client singleton + seed placeholder
-- `apps/api` — Next.js backend; JWT auth boundary + `/api/v1/profile*` routes + health check
-- `apps/mobile` — Expo / expo-router app; theme tokens, bottom-tab shell, auth (13+ gate)
+- `packages/db` — Prisma schema (from `DATA_MODEL.md`) + client singleton + seed + the
+  initial migration under `prisma/migrations/`
+- `apps/api` — Next.js backend; JWT auth boundary, observations pipeline (identify→score→
+  PlantDex), bbox map endpoint, `/api/v1/profile*`, health check; `vercel.json` for deploy
+- `apps/mobile` — Expo / expo-router app; discovery loop, real Mapbox map, theme tokens,
+  auth (13+ gate). Needs a custom dev build (Mapbox is native) — see `DEV_BUILD.md`.
 
 ### Commands
 
@@ -22,14 +32,19 @@ npm run db:generate         # generate the Prisma client (after schema changes)
 npm run typecheck           # tsc --noEmit across every workspace
 npm run test                # unit tests (scoring formulas pinned in packages/shared)
 npm run build:shared        # compile packages/shared to dist (api/mobile depend on it)
-npm run api:dev             # run the backend (needs .env — copy from .env.example)
-npm run mobile:start        # start Expo (needs a custom EAS dev build for Mapbox in M2)
-npm run db:migrate          # first migration — needs a live Supabase DB in .env
+npm run api:dev             # run the backend (reads .env at repo root)
+npm run mobile:start        # start Expo (needs a custom dev build for Mapbox — DEV_BUILD.md)
+npm run db:migrate          # prisma migrate dev (reads root .env; see note below)
 ```
 
-External services (Supabase, OpenAI, Mapbox, EAS) are **not provisioned**. Copy
-`.env.example` → `.env`, fill real values, then run `db:migrate`. Code is written to be
-credential-ready; nothing live is wired.
+> **Prisma + root `.env`:** the schema's datasource reads `DATABASE_URL`/`DIRECT_URL`,
+> but `.env` lives at the repo root while Prisma runs from `packages/db`. `npm run
+> db:migrate` will NOT auto-find it — load it first, e.g.
+> `cd packages/db && set -a && . ../../.env && set +a && npx prisma migrate dev`.
+
+Supabase is live (`.env` at repo root holds the values). OpenAI, Mapbox, Vercel, and the
+EAS/dev build remain to be wired. Secrets are backend-only, never in the mobile bundle,
+and `.env` is gitignored — never commit it.
 
 ## Testing (unit tests)
 
