@@ -3,6 +3,50 @@
 **Last updated:** 2026-05-30
 **Branch:** `main` (latest commit pushed to origin)
 
+## Latest iOS / Xcode readiness update — 2026-05-30
+
+This pass focused on making the mobile app prebuild cleanly for iOS/Xcode.
+
+- **Fixed React Native codegen failure from `@rnmapbox/maps`.** The mobile package had
+  `"@rnmapbox/maps": "~10.1.33"`, which allowed npm to install `10.1.45`. That newer
+  patch version ships `NativeRNMBXLocationModule.ts` with
+  `readonly onLocationUpdate: EventEmitter<LocationEvent>`, which React Native 0.74
+  codegen rejects with:
+  `UnsupportedModulePropertyParserError: TypeScript interfaces extending TurboModule must only contain FunctionTypeAnnotation's`.
+- **Pinned Mapbox exactly to `10.1.33`.** Updated `apps/mobile/package.json` and
+  `package-lock.json` so the install resolves to `@rnmapbox/maps@10.1.33`. The
+  `10.1.33` tarball does not include the failing iOS `NativeRNMBXLocationModule` spec,
+  so the codegen blocker is gone.
+- **Cleaned local mobile env syntax.** `apps/mobile/.env` had the Mapbox download token
+  line polluted with extra prose, causing `source .env` to emit a shell error. The local,
+  gitignored file was cleaned without committing secrets.
+- **Verified the new Mapbox download token.** A token preflight against the Mapbox iOS
+  binary URL returned HTTP `200` after the user replaced the token. Earlier token checks
+  returned `401`.
+- **Ran iOS prebuild through CocoaPods.** `cd apps/mobile && set -a && source .env &&
+  set +a && npm run prebuild:ios` completed far enough to generate
+  `apps/mobile/ios/SproutGo.xcworkspace` and `apps/mobile/ios/Podfile.lock`. The generated
+  `apps/mobile/ios/` directory is gitignored and intentionally not staged.
+- **CocoaPods delay note.** The slow portion was not Mapbox after token repair; CocoaPods
+  spent several minutes cloning/indexing `https://github.com/zxingify/zxingify-objc.git`
+  at tag `3.6.9`. Let it run on first install.
+- **Validation after dependency pin:** `npm run typecheck -w @sproutgo/mobile` passed and
+  `npm run test -w @sproutgo/mobile` passed (22 mobile tests).
+
+Current local Xcode path:
+
+```bash
+cd /Users/devk/SproutGO/apps/mobile
+set -a
+source .env
+set +a
+npm run prebuild:ios
+open ios/SproutGo.xcworkspace
+```
+
+Important: `apps/mobile/.env` remains gitignored and must contain a real
+`MAPBOX_DOWNLOAD_TOKEN` with Mapbox `DOWNLOADS:READ` scope. Do not commit that token.
+
 ## Cloud provisioning — Supabase is now LIVE (this session)
 
 The Supabase backend was provisioned and is no longer a placeholder:
