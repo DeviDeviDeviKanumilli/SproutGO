@@ -512,11 +512,12 @@ export const onboardingSlides: OnboardingSlide[] = [
   },
 ];
 
+// Legacy capture-flow fixture. The live flow now drives the post-capture branch from
+// the real ObservationResult (see identify/processing.tsx); this is retained only as a
+// fixture for the mockData referential-integrity tests.
 export const identifyResult = {
   plantId: "monstera",
   points: 65,
   confidence: 0.94,
-  // Drives the post-capture branch: true → gold First Discovery modal (design §8.8),
-  // false → standard result screen. Flip to preview either reward state.
   isFirstDiscovery: true,
 };
