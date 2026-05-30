@@ -61,6 +61,15 @@ describe("serializeObservationMarker", () => {
     expect(marker.longitude).toBe(LNG);
   });
 
+  it("source reflects the viewer relationship (own / friend / public) for the map layers", () => {
+    const own = observation({ userId: OWNER, plant: plant() });
+    expect(serializeObservationMarker(own as never, OWNER).source).toBe("own");
+
+    const others = observation({ userId: OWNER, plant: plant() });
+    expect(serializeObservationMarker(others as never, VIEWER, [OWNER]).source).toBe("friend");
+    expect(serializeObservationMarker(others as never, VIEWER, []).source).toBe("public");
+  });
+
   it("non-owner of a RARE plant gets fuzzed coords equal to snapToGrid(original)", () => {
     const row = observation({ userId: OWNER, plant: plant({ rarity: "RARE" }) });
     const marker = serializeObservationMarker(row as never, VIEWER);

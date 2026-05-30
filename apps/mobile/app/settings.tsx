@@ -12,7 +12,15 @@ import { settingsSections, type SettingRow } from "@/lib/mockData";
 
 export default function Settings() {
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { signOut, session } = useAuth();
+
+  // Surface real account data instead of placeholders (PRD account feature).
+  function displayValue(row: SettingRow): string | undefined {
+    if (row.key === "email") return session?.user?.email ?? row.value;
+    // The server default for new captures is PRIVATE (privacy-by-default).
+    if (row.key === "privacy") return "Private";
+    return row.value;
+  }
   const [toggles, setToggles] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
       settingsSections.flatMap((s) =>
@@ -75,7 +83,7 @@ export default function Settings() {
                       thumbColor={colors.surfaceLowest}
                     />
                   ) : row.kind === "value" ? (
-                    <Text style={styles.value}>{row.value}</Text>
+                    <Text style={styles.value}>{displayValue(row)}</Text>
                   ) : row.destructive ? null : (
                     <Icon name="chevron-right" size={22} color={colors.textMuted} />
                   )}
