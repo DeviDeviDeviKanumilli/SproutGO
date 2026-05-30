@@ -1,19 +1,25 @@
-// AI processing screen — shown after capture while the species is identified.
-// Animated scan line sweeps the captured photo; corner reticles + spinner give the
-// "analyzing" feel. Auto-advances to the result reward screen after a beat.
-import { useEffect, useRef } from "react";
+// AI processing screen — shown after capture while the species is identified. Uploads
+// the captured photo to Storage, POSTs to /observations, then hands the result to the
+// reward screen. Animated scan line + spinner give the "analyzing" feel; on failure it
+// surfaces a retry/back affordance instead of hanging.
+import { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Image, Animated, Easing, Pressable, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
-
-const CAPTURED =
-  "https://images.unsplash.com/photo-1509423350716-97f9360b4e09?auto=format&fit=crop&w=600&q=70";
+import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
+import { uploadObservationPhoto } from "@/lib/storage";
+import { takePendingPhoto, setLastResult } from "@/lib/captureStore";
+import type { ObservationResult } from "@sproutgo/shared";
 
 export default function Processing() {
   const router = useRouter();
+  const { session } = useAuth();
   const scan = useRef(new Animated.Value(0)).current;
+  const [error, setError] = useState<string | null>(null);
+  const photoUri = useRef(takePendingPhoto()).current;
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -25,42 +31,79 @@ export default function Processing() {
       }),
     );
     loop.start();
-    const t = setTimeout(() => router.replace("/identify/result"), 2600);
+
+    let cancelled = false;
+    (async () => {
+      const userId = session?.user?.id;
+      if (!photoUri || !userId) {
+        if (!cancelled) setError("Missing photo or session. Please try again.");
+        return;
+      }
+      try {
+        const imagePath = await uploadObservationPhoto(photoUri, userId);
+        const result = await api.post<ObservationResult>("/observations", { imagePath });
+        if (cancelled) return;
+        setLastResult(result);
+        router.replace("/identify/result");
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Identification failed.");
+      }
+    })();
+
     return () => {
+      cancelled = true;
       loop.stop();
-      clearTimeout(t);
     };
-  }, [router, scan]);
+  }, [router, scan, session, photoUri]);
 
   const translateY = scan.interpolate({ inputRange: [0, 1], outputRange: [0, 360] });
 
   return (
     <SafeAreaView style={styles.safe}>
-      <Pressable style={styles.closeBtn} onPress={() => router.back()}>
+      <Pressable style={styles.closeBtn} onPress={() => router.replace("/(tabs)/map")}>
         <Icon name="close" size={22} color={colors.textMuted} />
       </Pressable>
 
       <View style={styles.center}>
         <View style={styles.photoCard}>
-          <Image source={{ uri: CAPTURED }} style={styles.photo} />
-          <Animated.View style={[styles.scanLine, { transform: [{ translateY }] }]} />
-          <View style={[styles.reticle, styles.tl]} />
-          <View style={[styles.reticle, styles.tr]} />
-          <View style={[styles.reticle, styles.bl]} />
-          <View style={[styles.reticle, styles.br]} />
+          {photoUri ? <Image source={{ uri: photoUri }} style={styles.photo} /> : null}
+          {!error ? (
+            <>
+              <Animated.View style={[styles.scanLine, { transform: [{ translateY }] }]} />
+              <View style={[styles.reticle, styles.tl]} />
+              <View style={[styles.reticle, styles.tr]} />
+              <View style={[styles.reticle, styles.bl]} />
+              <View style={[styles.reticle, styles.br]} />
+            </>
+          ) : null}
         </View>
 
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
-        <Text style={[typography.sectionTitle, { marginTop: spacing.md }]}>Analyzing Specimen</Text>
-        <Text style={[typography.body, { color: colors.textMuted }]}>
-          Cross-referencing PlantDex database...
-        </Text>
+        {error ? (
+          <>
+            <Icon name="error-outline" size={40} color={colors.secondary} />
+            <Text style={[typography.sectionTitle, { marginTop: spacing.md }]}>Identification Failed</Text>
+            <Text style={[typography.body, { color: colors.textMuted, textAlign: "center" }]}>
+              {error}
+            </Text>
+            <Pressable style={styles.retryBtn} onPress={() => router.replace("/(tabs)/capture")}>
+              <Text style={styles.retryText}>Try Again</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
+            <Text style={[typography.sectionTitle, { marginTop: spacing.md }]}>Analyzing Specimen</Text>
+            <Text style={[typography.body, { color: colors.textMuted }]}>
+              Cross-referencing PlantDex database...
+            </Text>
 
-        <View style={styles.hint}>
-          <Text style={styles.hintText}>
-            Ensure the leaf structure is clearly visible for accurate identification.
-          </Text>
-        </View>
+            <View style={styles.hint}>
+              <Text style={styles.hintText}>
+                Ensure the leaf structure is clearly visible for accurate identification.
+              </Text>
+            </View>
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -120,4 +163,12 @@ const styles = StyleSheet.create({
     maxWidth: 280,
   },
   hintText: { ...typography.caption, color: colors.secondary, textAlign: "center" },
+  retryBtn: {
+    marginTop: spacing.xl,
+    backgroundColor: colors.primary,
+    borderRadius: radius.button,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  retryText: { ...typography.body, color: colors.onPrimary, fontWeight: "600" },
 });

@@ -5,16 +5,19 @@
 
 ## Where the project stands
 
-M0 — Foundation is complete. M1 is **in progress**:
-- **Mobile UI shell** (`7ef20be`) — presentational, over mock fixtures
-  (`apps/mobile/src/lib/mockData.ts`).
-- **Backend M1 spine** (this commit) — the real `POST /api/v1/observations`
-  identify→score→PlantDex pipeline + the swappable `PlantIdentifier` interface.
+M0 — Foundation is complete. **M1 — the discovery loop is now wired end-to-end**
+in code:
+- **Backend** (`91896ff`) — `POST /api/v1/observations` identify→score→PlantDex
+  pipeline + the swappable `PlantIdentifier` interface.
+- **Backend** (this commit) — `GET /api/v1/plantdex/me` (discovered species +
+  stats) and the vitest suite covering the pipeline.
+- **Mobile** (this commit) — live `expo-camera` capture → Supabase Storage
+  upload → `POST /observations` → real result screen → PlantDex grid fetched
+  from `/plantdex/me`. The discovery loop no longer runs on mock fixtures.
 
-**Still not wired:** mobile camera capture + Supabase Storage upload, repointing
-the result/PlantDex screens off mock data onto the live endpoint, and the
-`GET /plantdex/me` read. Some M3/M4 screens (forum thread, plant chat) exist as
-UI only. M2 (map richness) and the rest of M3–M5 remain. See
+**Still UI-only / mock-backed:** the PlantDex detail screen (`plant/[id]`,
+reached via the result screen's "View PlantDex Entry"), plus some M3/M4 screens
+(forum thread, plant chat). M2 (map richness) and the rest of M3–M5 remain. See
 `currentPlans/BUILD_MILESTONES.md` for full sequencing.
 
 The backend pipeline runs today against a **deterministic stub identifier** (no
@@ -24,53 +27,66 @@ credentials needed); the OpenAI vision adapter activates automatically when
 
 Verified green (this commit):
 - `npm run typecheck` — passes across all 4 workspaces (shared, db, api, mobile)
-- `npm run test` — 5/5 scoring tests pass (`packages/shared`)
+- `npm run test` — 15 tests pass (5 shared scoring + 3 stub identifier + 7 pipeline)
+
+**NOT runtime-verified:** the end-to-end mobile loop. `expo-camera` does not run
+in Expo Go (needs a custom EAS dev build, R1), and no Supabase Storage bucket
+(`observations`) or OpenAI key is provisioned. The mobile code compiles and the
+backend is covered by tests via the stub, but capture→upload→unlock has not been
+exercised against live services.
 
 External services (Supabase, OpenAI, Mapbox, EAS) are **not provisioned**. Code
 is credential-ready; the user wires `.env` and runs migrations/EAS themselves.
 
-## What changed most recently (this commit — backend M1 spine)
+## What changed most recently (this commit — M1 loop wired end-to-end)
 
-Built the real `POST /api/v1/observations` pipeline and the swappable
-identifier, all credential-ready:
+Completed the M1 discovery loop on top of the backend pipeline from `91896ff`:
 
-- `apps/api/src/lib/identify/` — `PlantIdentifier` interface, a deterministic
-  `StubPlantIdentifier` (no network), an `OpenAIPlantIdentifier` (vision JSON
-  mode, Zod-validated, key read lazily), and a `getPlantIdentifier()` factory
-  that picks OpenAI when `OPENAI_API_KEY` is set else the stub.
-- `apps/api/src/app/api/v1/observations/route.ts` — `POST` pipeline in one
-  `prisma.$transaction`: create observation → identify → match/auto-create
-  Plant (≥0.85 → `OPENAI` source, else `UNCERTAIN`/no unlock) → daily quota →
-  first-discovery vs duplicate points → PlantDexEntry upsert → bump
-  `Profile.totalPoints`. Returns `ObservationResult`.
-- `validation.ts` (`createObservationSchema`) and `serializers.ts`
-  (`serializePlant`, `serializeObservation`). Added the `openai` dependency.
-
-The earlier mobile UI shell (`7ef20be`) remains presentational over mock data.
+- `apps/api/src/app/api/v1/plantdex/me/route.ts` — `GET /plantdex/me` returning
+  `{ entries: PlantDexEntry[], stats }`, scoped to the authenticated user; each
+  entry embeds its resolved `Plant` so the grid renders in one fetch.
+- Shared `PlantDexEntry` / `PlantDexResponse` types + `serializePlantDexEntry`.
+- vitest suite (`apps/api/vitest.config.ts` + 2 test files, 10 tests): stub
+  identifier determinism/shape, and the scoring branches (auto-create threshold,
+  first-discovery, duplicate decay + cap, quota boundary).
+- Mobile capture flow, now live instead of mock:
+  - `capture.tsx` — `expo-camera` viewfinder + permission gate + shutter.
+  - `src/lib/storage.ts` — uploads the photo to Supabase Storage under
+    `<userId>/<uuid>.jpg` (the prefix the API enforces).
+  - `src/lib/captureStore.ts` — passes the photo URI / `ObservationResult`
+    between the capture→processing→result screens.
+  - `processing.tsx` — uploads then `POST /observations`, with a failure/retry
+    state replacing the old fixed timer.
+  - `result.tsx` — renders the real `ObservationResult` with distinct MATCHED /
+    UNCERTAIN / quota-reached views.
+  - `plantdex.tsx` — fetches `/plantdex/me` on focus with loading/empty/error
+    states.
+- Added the `expo-camera` dependency.
 
 ## Git state
 
-M0 (`05f37d6`), the M1 UI shell (`7ef20be`), and this backend-spine commit are
-on `origin/main`. All work has gone straight to `main` (no feature branches).
+M0 (`05f37d6`), the M1 UI shell (`7ef20be`), the backend spine (`91896ff`), and
+this loop-wiring commit are on `origin/main`. All work has gone straight to
+`main` (no feature branches).
 
-## Next steps (finish the M1 spine)
+## Next steps
 
-The backend pipeline exists; the loop is not yet end-to-end. Remaining:
+The M1 loop is wired in code but not runtime-verified. Likely next work:
 
-1. **Mobile camera capture** — replace the simulated `capture.tsx` with
-   `expo-camera` (needs the custom EAS dev build, R1) + a Supabase Storage
-   upload helper that returns `imagePath` under the `<userId>/` prefix.
-2. **Wire the screens** — `processing.tsx` uploads then calls
-   `POST /observations`; `result.tsx` renders the real `ObservationResult`
-   (MATCHED / UNCERTAIN / `quotaReached`) instead of `mockData`.
-3. **`GET /plantdex/me`** — so the unlocked species is actually visible after a
-   capture (the M1 demo criterion); repoint `plantdex.tsx` onto it.
-4. **Tests** — vitest for the stub identifier + the scoring/branch logic
-   (first-discovery, duplicate, UNCERTAIN, quota, auto-create).
-5. **Seed the Library** (`LIBRARY_SEED.md`) — blocked on the OPEN_QUESTIONS
-   seed-scope decision + a live DB; the stub covers the no-data case meanwhile.
-6. **Provision services** (user-owned) — Supabase Storage bucket
-   `observations`, OpenAI key, EAS dev build. Code is credential-ready.
+1. **Provision services + smoke-test the loop** (user-owned) — create the
+   Supabase Storage bucket `observations` (+ RLS so a user writes only under
+   their own `<userId>/` prefix), set `OPENAI_API_KEY`, and run a custom EAS dev
+   build (expo-camera + Mapbox both need it, R1). Then walk capture→unlock.
+2. **PlantDex detail screen** (`plant/[id]`) — still mock-backed; needs a
+   `GET /library/:plantId` (or `/plantdex` entry) read. It's the screen the
+   result screen's "View PlantDex Entry" routes to.
+3. **Seed the Library** (`LIBRARY_SEED.md`) — blocked on the OPEN_QUESTIONS
+   seed-scope decision + a live DB; the stub auto-creates rows meanwhile.
+4. **Coordinate handling** — capture currently sends no lat/long; wire
+   `expo-location` and decide the fuzzing strategy (OPEN_QUESTIONS #6) before
+   exposing observation coordinates on the map (M2).
+
+Constraints still in force:
 - Do NOT provision/wire live external services — the user wires credentials.
 - Commit ONLY when explicitly asked.
 - `InitalPlans/` frozen; `currentPlans/` is the living source of truth.

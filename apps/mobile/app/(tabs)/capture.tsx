@@ -1,26 +1,67 @@
-// Capture tab (Stitch Camera Screen). Simulated camera viewfinder: a framing reticle
-// over a preview, top close/flash controls, an instruction bubble, and a shutter that
-// kicks off the identification flow. Real camera wiring lands in M1.
-import { View, Text, StyleSheet, Pressable, ImageBackground } from "react-native";
+// Capture tab (Stitch Camera Screen). Live expo-camera viewfinder with a framing
+// reticle, top close/flash controls, an instruction bubble, and a shutter that takes a
+// photo and kicks off identification. NOTE: expo-camera does NOT run in Expo Go — needs
+// a custom EAS dev build (same constraint as Mapbox, TECH_RISKS R1).
+import { useRef, useState } from "react";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import { CameraView, useCameraPermissions, type FlashMode } from "expo-camera";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
-
-const PREVIEW =
-  "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=900&q=70";
+import { setPendingPhoto } from "@/lib/captureStore";
 
 export default function CaptureScreen() {
   const router = useRouter();
+  const cameraRef = useRef<CameraView>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [flash, setFlash] = useState<FlashMode>("off");
+  const [busy, setBusy] = useState(false);
+
+  async function onShutter() {
+    if (busy || !cameraRef.current) return;
+    setBusy(true);
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
+      if (photo?.uri) {
+        setPendingPhoto(photo.uri);
+        router.push("/identify/processing");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Permission not yet resolved — render nothing rather than flashing the prompt.
+  if (!permission) return <View style={styles.root} />;
+
+  if (!permission.granted) {
+    return (
+      <SafeAreaView style={[styles.root, styles.permWrap]}>
+        <Icon name="photo-camera" size={48} color={colors.onPrimary} />
+        <Text style={styles.permText}>SproutGo needs camera access to identify plants.</Text>
+        <Pressable style={styles.permBtn} onPress={requestPermission}>
+          <Text style={styles.permBtnText}>Grant Access</Text>
+        </Pressable>
+        <Pressable onPress={() => router.replace("/(tabs)/map")}>
+          <Text style={styles.permSkip}>Not now</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <ImageBackground source={{ uri: PREVIEW }} style={styles.root}>
+    <View style={styles.root}>
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" flash={flash} />
       <SafeAreaView edges={["top"]} style={styles.topBar}>
         <Pressable style={styles.glassBtn} onPress={() => router.replace("/(tabs)/map")}>
           <Icon name="close" size={24} color={colors.onPrimary} />
         </Pressable>
-        <Pressable style={styles.glassBtn}>
-          <Icon name="flash-on" size={24} color={colors.onPrimary} />
+        <Pressable
+          style={styles.glassBtn}
+          onPress={() => setFlash((f) => (f === "off" ? "on" : "off"))}
+        >
+          <Icon name={flash === "on" ? "flash-on" : "flash-off"} size={24} color={colors.onPrimary} />
         </Pressable>
       </SafeAreaView>
 
@@ -38,10 +79,8 @@ export default function CaptureScreen() {
           <Text style={styles.instructionText}>Center your plant</Text>
         </View>
         <View style={styles.controlRow}>
-          <Pressable style={styles.glassBtn}>
-            <Icon name="photo-library" size={24} color={colors.onPrimary} />
-          </Pressable>
-          <Pressable style={styles.shutter} onPress={() => router.push("/identify/processing")}>
+          <View style={styles.glassBtn} />
+          <Pressable style={styles.shutter} onPress={onShutter} disabled={busy}>
             <View style={styles.shutterInner}>
               <Icon name="local-florist" size={30} color={colors.onPrimary} />
             </View>
@@ -49,12 +88,22 @@ export default function CaptureScreen() {
           <View style={styles.glassBtn} />
         </View>
       </View>
-    </ImageBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000", justifyContent: "space-between" },
+  permWrap: { alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.lg },
+  permText: { ...typography.body, color: colors.onPrimary, textAlign: "center" },
+  permBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.button,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  permBtnText: { ...typography.body, color: colors.onPrimary, fontWeight: "600" },
+  permSkip: { ...typography.caption, color: colors.onPrimary, opacity: 0.7 },
   topBar: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   glassBtn: {
     width: 48,

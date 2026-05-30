@@ -4,6 +4,7 @@ import type {
   Profile as ProfileRow,
   Plant as PlantRow,
   Observation as ObservationRow,
+  PlantDexEntry as PlantDexEntryRow,
 } from "@sproutgo/db";
 import type {
   Profile,
@@ -11,6 +12,7 @@ import type {
   ProfileWithStats,
   Plant,
   Observation,
+  PlantDexEntry,
 } from "@sproutgo/shared";
 
 export function serializeProfile(row: ProfileRow): Profile {
@@ -70,5 +72,17 @@ export function serializeObservation(row: ObservationRow): Observation {
     privacy: row.privacy,
     pointsAwarded: row.pointsAwarded,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function serializePlantDexEntry(
+  row: PlantDexEntryRow & { plant: PlantRow },
+): PlantDexEntry {
+  return {
+    id: row.id,
+    plantId: row.plantId,
+    firstDiscoveredAt: row.firstDiscoveredAt.toISOString(),
+    timesObserved: row.timesObserved,
+    plant: serializePlant(row.plant),
   };
 }

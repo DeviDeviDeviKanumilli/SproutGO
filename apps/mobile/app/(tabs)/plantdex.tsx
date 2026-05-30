@@ -1,57 +1,88 @@
 // PlantDex tab — collection progress + hexagon badge grid (Stitch "PlantDex Screen").
-// Discovered badges show a rarity-ringed photo; locked ones show a question mark by
-// biome. Tapping a discovered plant routes to its detail screen.
-import { useState } from "react";
-import { ScrollView, View, Text, StyleSheet, Pressable, TextInput } from "react-native";
+// Fetches the user's discovered species from GET /plantdex/me. The server returns only
+// discovered entries, so the grid shows unlocked species; rarity filters narrow them.
+import { useCallback, useState } from "react";
+import { ScrollView, View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
+import type { PlantDexResponse, Rarity } from "@sproutgo/shared";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
 import { AppHeader, Chip } from "@/components/ui";
 import { HexBadge } from "@/components/HexBadge";
-import { plants, plantTypeChips, dexProgress, profile, type Rarity } from "@/lib/mockData";
+import { api, ApiClientError } from "@/lib/api";
 
 const FILTERS: { key: string; label: string }[] = [
   { key: "all", label: "All" },
   { key: "COMMON", label: "Common" },
+  { key: "UNCOMMON", label: "Uncommon" },
   { key: "RARE", label: "Rare" },
   { key: "LEGENDARY", label: "Legendary" },
-  { key: "locked", label: "Locked" },
 ];
 
 export default function PlantDexScreen() {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
+  const [data, setData] = useState<PlantDexResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const visible = plants.filter((p) => {
-    if (filter === "all") return true;
-    if (filter === "locked") return !p.discovered;
-    return p.rarity === (filter as Rarity);
-  });
-  const pct = Math.round((dexProgress.discovered / dexProgress.total) * 100);
+  const load = useCallback(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<PlantDexResponse>("/plantdex/me")
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof ApiClientError ? e.message : "Could not load your PlantDex.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useFocusEffect(load);
+
+  const entries = data?.entries ?? [];
+  const visible = entries.filter((e) => filter === "all" || e.plant.rarity === (filter as Rarity));
+  const stats = data?.stats;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <AppHeader title="SproutGo" avatarUri={profile.avatarUrl} />
+      <AppHeader title="SproutGo" />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <Text style={typography.largeTitle}>PlantDex</Text>
           <Text style={[typography.body, { marginBottom: spacing.md }]}>
-            {dexProgress.discovered} / {dexProgress.total} species discovered
+            {stats ? `${stats.speciesDiscovered} species discovered` : "Your collection"}
           </Text>
           <View style={styles.track}>
-            <View style={[styles.fill, { width: `${pct}%` }]} />
+            <View style={[styles.fill, { width: `${stats?.completionPct ?? 0}%` }]} />
           </View>
-          <View style={styles.statChips}>
-            {plantTypeChips.map((c) => (
-              <View key={c.key} style={styles.statChip}>
-                <Icon name={c.icon} size={15} color={colors.secondary} />
-                <Text style={styles.statChipText}>
-                  {c.count} {c.label}
-                </Text>
+          {stats ? (
+            <View style={styles.statChips}>
+              <View style={styles.statChip}>
+                <Icon name="emoji-events" size={15} color={colors.secondary} />
+                <Text style={styles.statChipText}>{stats.totalPoints} pts</Text>
               </View>
-            ))}
-          </View>
+              <View style={styles.statChip}>
+                <Icon name="auto-awesome" size={15} color={colors.secondary} />
+                <Text style={styles.statChipText}>{stats.rareFound} rare</Text>
+              </View>
+              <View style={styles.statChip}>
+                <Icon name="photo-camera" size={15} color={colors.secondary} />
+                <Text style={styles.statChipText}>{stats.photosSubmitted} photos</Text>
+              </View>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.searchRow}>
@@ -78,31 +109,44 @@ export default function PlantDexScreen() {
           ))}
         </ScrollView>
 
-        <View style={styles.grid}>
-          {visible.map((p) => (
-            <Pressable
-              key={p.id}
-              style={styles.cell}
-              disabled={!p.discovered}
-              onPress={() => router.push(`/plant/${p.id}`)}
-            >
-              <HexBadge
-                imageUrl={p.imageUrl}
-                rarity={p.rarity}
-                locked={!p.discovered}
-              />
-              <Text
-                style={[styles.cellName, !p.discovered && { color: colors.textMuted }]}
-                numberOfLines={1}
-              >
-                {p.discovered ? p.commonName : "Undiscovered"}
-              </Text>
-              <Text style={styles.cellSci} numberOfLines={1}>
-                {p.discovered ? p.scientificName : (p.biome ?? "Locked")}
-              </Text>
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+        ) : error ? (
+          <View style={styles.notice}>
+            <Icon name="cloud-off" size={32} color={colors.textMuted} />
+            <Text style={styles.noticeText}>{error}</Text>
+            <Pressable style={styles.retryBtn} onPress={load}>
+              <Text style={styles.retryText}>Retry</Text>
             </Pressable>
-          ))}
-        </View>
+          </View>
+        ) : visible.length === 0 ? (
+          <View style={styles.notice}>
+            <Icon name="local-florist" size={32} color={colors.textMuted} />
+            <Text style={styles.noticeText}>
+              {entries.length === 0
+                ? "No discoveries yet. Snap a plant to start your PlantDex!"
+                : "No species match this filter."}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.grid}>
+            {visible.map((e) => (
+              <Pressable
+                key={e.id}
+                style={styles.cell}
+                onPress={() => router.push(`/plant/${e.plant.id}`)}
+              >
+                <HexBadge imageUrl={e.plant.imageUrl} rarity={e.plant.rarity} />
+                <Text style={styles.cellName} numberOfLines={1}>
+                  {e.plant.commonName ?? e.plant.scientificName}
+                </Text>
+                <Text style={styles.cellSci} numberOfLines={1}>
+                  {e.plant.scientificName}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -157,4 +201,13 @@ const styles = StyleSheet.create({
   cell: { width: "47%", alignItems: "center" },
   cellName: { ...typography.caption, fontWeight: "600", color: colors.text, marginTop: spacing.sm },
   cellSci: { ...typography.scientificName, textAlign: "center" },
+  notice: { alignItems: "center", gap: spacing.md, paddingVertical: spacing.xxl, paddingHorizontal: spacing.lg },
+  noticeText: { ...typography.body, color: colors.textMuted, textAlign: "center" },
+  retryBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.button,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+  },
+  retryText: { ...typography.body, color: colors.onPrimary, fontWeight: "600" },
 });

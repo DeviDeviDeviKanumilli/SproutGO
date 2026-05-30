@@ -1,6 +1,7 @@
 // Discovery reward screen — the celebratory moment after identification. A hexagon
 // badge holds the plant photo, a gold points pill animates in, and CTAs route to the
-// PlantDex entry or sharing. Presentational; data from mockData.identifyResult.
+// PlantDex entry. Renders the real ObservationResult from the capture store; handles the
+// UNCERTAIN (low-confidence) and quota-reached cases distinctly from a clean discovery.
 import { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Pressable, Animated, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
@@ -9,11 +10,11 @@ import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
 import { HexBadge } from "@/components/HexBadge";
 import { RarityBadge } from "@/components/ui";
-import { plantById, identifyResult } from "@/lib/mockData";
+import { takeLastResult } from "@/lib/captureStore";
 
 export default function IdentifyResult() {
   const router = useRouter();
-  const plant = plantById(identifyResult.plantId)!;
+  const result = useRef(takeLastResult()).current;
   const pop = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(80)).current;
 
@@ -24,10 +25,26 @@ export default function IdentifyResult() {
     ]).start();
   }, [pop, slide]);
 
+  // No result in the store (e.g. deep-linked or reloaded) — bounce to capture.
+  if (!result) {
+    return (
+      <View style={[styles.root, styles.fallback]}>
+        <Text style={[typography.body, { color: colors.text }]}>No identification to show.</Text>
+        <Pressable style={styles.primaryBtn} onPress={() => router.replace("/(tabs)/capture")}>
+          <Text style={styles.primaryText}>Take a Photo</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const { plant, confidence, isFirstDiscovery, pointsAwarded, quotaReached } = result;
+  const uncertain = plant === null;
+  const heroUri = plant?.imageUrl ?? null;
+
   return (
     <View style={styles.root}>
       <ImageBackground
-        source={plant.imageUrl ? { uri: plant.imageUrl } : undefined}
+        source={heroUri ? { uri: heroUri } : undefined}
         style={StyleSheet.absoluteFill}
         blurRadius={2}
       >
@@ -43,47 +60,82 @@ export default function IdentifyResult() {
       <Animated.View style={[styles.sheet, { transform: [{ translateY: slide }] }]}>
         <View style={styles.handle} />
         <Animated.View style={{ transform: [{ scale: pop }], marginBottom: spacing.lg }}>
-          <HexBadge imageUrl={plant.imageUrl} rarity={plant.rarity} size={140} />
+          {uncertain ? (
+            <View style={styles.uncertainBadge}>
+              <Icon name="help-outline" size={64} color={colors.secondary} />
+            </View>
+          ) : (
+            <HexBadge imageUrl={plant.imageUrl} rarity={plant.rarity} size={140} />
+          )}
         </Animated.View>
 
-        <View style={styles.pointsPill}>
-          <Icon name="stars" size={16} color={colors.onPrimary} />
-          <Text style={styles.pointsText}>+{identifyResult.points} Points</Text>
-        </View>
-
-        <Text style={styles.kicker}>
-          {identifyResult.isFirstDiscovery ? "New species!" : "Congrats! You discovered"}
-        </Text>
-        <Text style={styles.title}>{plant.commonName}</Text>
-        <Text style={[typography.scientificName, { fontSize: 15, color: colors.secondary }]}>
-          {plant.scientificName}
-        </Text>
-
-        <View style={styles.metaRow}>
-          <RarityBadge rarity={plant.rarity} />
-          <View style={styles.metaChip}>
-            <Icon name="verified" size={15} color={colors.primary} />
-            <Text style={styles.metaChipText}>
-              {Math.round(identifyResult.confidence * 100)}% Confidence
+        {uncertain ? (
+          <>
+            <Text style={styles.kicker}>Not sure yet</Text>
+            <Text style={styles.title}>Uncertain match</Text>
+            <Text style={[typography.body, { color: colors.textMuted, textAlign: "center", marginTop: spacing.sm }]}>
+              We couldn{"’"}t confidently identify this one
+              {confidence != null ? ` (${Math.round(confidence * 100)}% confidence)` : ""}.
+              Try a clearer photo of the leaves or flowers.
             </Text>
-          </View>
-        </View>
+            <Pressable style={[styles.primaryBtn, { marginTop: spacing.xl }]} onPress={() => router.replace("/(tabs)/capture")}>
+              <Icon name="photo-camera" size={20} color={colors.onPrimary} />
+              <Text style={styles.primaryText}>Try Again</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            {pointsAwarded > 0 ? (
+              <View style={styles.pointsPill}>
+                <Icon name="stars" size={16} color={colors.onPrimary} />
+                <Text style={styles.pointsText}>+{pointsAwarded} Points</Text>
+              </View>
+            ) : quotaReached ? (
+              <View style={[styles.pointsPill, { backgroundColor: colors.surfaceHigh }]}>
+                <Icon name="hourglass-empty" size={16} color={colors.secondary} />
+                <Text style={[styles.pointsText, { color: colors.secondary }]}>Daily limit reached</Text>
+              </View>
+            ) : null}
 
-        <View style={styles.about}>
-          <Text style={typography.sectionTitle}>About This Plant</Text>
-          <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.xs }]}>
-            {plant.description}
-          </Text>
-        </View>
+            <Text style={styles.kicker}>
+              {isFirstDiscovery ? "New species!" : "Congrats! You discovered"}
+            </Text>
+            <Text style={styles.title}>{plant.commonName ?? plant.scientificName}</Text>
+            <Text style={[typography.scientificName, { fontSize: 15, color: colors.secondary }]}>
+              {plant.scientificName}
+            </Text>
 
-        <Pressable style={styles.primaryBtn} onPress={() => router.replace(`/plant/${plant.id}`)}>
-          <Icon name="menu-book" size={20} color={colors.onPrimary} />
-          <Text style={styles.primaryText}>View PlantDex Entry</Text>
-        </Pressable>
-        <Pressable style={styles.secondaryBtn}>
-          <Icon name="ios-share" size={20} color={colors.primary} />
-          <Text style={styles.secondaryText}>Share Discovery</Text>
-        </Pressable>
+            <View style={styles.metaRow}>
+              <RarityBadge rarity={plant.rarity} />
+              {confidence != null ? (
+                <View style={styles.metaChip}>
+                  <Icon name="verified" size={15} color={colors.primary} />
+                  <Text style={styles.metaChipText}>
+                    {Math.round(confidence * 100)}% Confidence
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {plant.description ? (
+              <View style={styles.about}>
+                <Text style={typography.sectionTitle}>About This Plant</Text>
+                <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.xs }]}>
+                  {plant.description}
+                </Text>
+              </View>
+            ) : null}
+
+            <Pressable style={styles.primaryBtn} onPress={() => router.replace(`/plant/${plant.id}`)}>
+              <Icon name="menu-book" size={20} color={colors.onPrimary} />
+              <Text style={styles.primaryText}>View PlantDex Entry</Text>
+            </Pressable>
+            <Pressable style={styles.secondaryBtn} onPress={() => router.replace("/(tabs)/plantdex")}>
+              <Icon name="grid-view" size={20} color={colors.primary} />
+              <Text style={styles.secondaryText}>Back to PlantDex</Text>
+            </Pressable>
+          </>
+        )}
       </Animated.View>
     </View>
   );
@@ -91,6 +143,15 @@ export default function IdentifyResult() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  fallback: { alignItems: "center", justifyContent: "center", gap: spacing.lg, padding: spacing.xl },
+  uncertainBadge: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: colors.surfaceHigh,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
   closeWrap: { position: "absolute", top: 0, right: 0, left: 0, zIndex: 20, alignItems: "flex-end", padding: spacing.lg },
   closeBtn: {

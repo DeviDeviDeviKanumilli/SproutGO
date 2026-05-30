@@ -84,6 +84,22 @@ export interface ObservationResult {
   quotaReached?: boolean;
 }
 
+// A discovered-species entry in a user's PlantDex (DATA_MODEL §PlantDexEntry).
+// Embeds the resolved Plant so the badge grid renders without an extra fetch.
+export interface PlantDexEntry {
+  id: string;
+  plantId: string;
+  firstDiscoveredAt: string; // ISO 8601
+  timesObserved: number;
+  plant: Plant;
+}
+
+// GET /plantdex/me response (API_CONTRACT §plantdex).
+export interface PlantDexResponse {
+  entries: PlantDexEntry[];
+  stats: ProfileStats;
+}
+
 // --- Request bodies --------------------------------------------------------
 export interface CreateProfileBody {
   username: string;
