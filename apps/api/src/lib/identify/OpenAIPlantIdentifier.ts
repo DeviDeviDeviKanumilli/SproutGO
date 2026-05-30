@@ -11,6 +11,7 @@ import { env } from "@/lib/env";
 import type { IdResult, PlantIdentifier } from "./PlantIdentifier";
 
 const MODEL = "gpt-4o";
+const OPENAI_TIMEOUT_MS = 20_000;
 
 const SYSTEM_PROMPT =
   "You are a botanical identifier. Given a plant photo, return ONLY the single most " +
@@ -26,38 +27,57 @@ const responseSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
-const FAILED: IdResult = {
+export const FAILED: IdResult = {
   scientificName: "",
   commonName: null,
   family: null,
   confidence: 0,
 };
 
+// Pure parser for the model's raw text — exported so the failure modes (null, malformed
+// JSON, schema mismatch, empty species) are unit-testable without a live OpenAI call.
+// Any non-conforming output is a FAILED identification rather than trusted/invented data.
+export function parseIdentification(raw: string | null | undefined): IdResult {
+  if (!raw) return FAILED;
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return FAILED;
+  }
+  const parsed = responseSchema.safeParse(json);
+  if (!parsed.success || parsed.data.scientificName.trim() === "") {
+    return FAILED;
+  }
+  return parsed.data;
+}
+
 export class OpenAIPlantIdentifier implements PlantIdentifier {
   async identify(imageUrl: string): Promise<IdResult> {
-    const client = new OpenAI({ apiKey: env.openaiApiKey });
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+    try {
+      const client = new OpenAI({ apiKey: env.openaiApiKey });
+      const completion = await client.chat.completions.create(
         {
-          role: "user",
-          content: [
-            { type: "text", text: "Identify the plant in this image." },
-            { type: "image_url", image_url: { url: imageUrl } },
+          model: MODEL,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Identify the plant in this image." },
+                { type: "image_url", image_url: { url: imageUrl } },
+              ],
+            },
           ],
         },
-      ],
-    });
-
-    const raw = completion.choices[0]?.message.content;
-    if (!raw) return FAILED;
-
-    const parsed = responseSchema.safeParse(JSON.parse(raw));
-    if (!parsed.success || parsed.data.scientificName.trim() === "") {
+        { signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS) },
+      );
+      return parseIdentification(completion.choices[0]?.message.content);
+    } catch {
+      // Provider error, timeout/abort, or network failure — treat as a failed ID so the
+      // route records UNCERTAIN instead of throwing a 500.
       return FAILED;
     }
-    return parsed.data;
   }
 }

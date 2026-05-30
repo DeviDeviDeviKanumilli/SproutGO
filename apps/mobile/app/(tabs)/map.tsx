@@ -34,6 +34,7 @@ export default function MapScreen() {
   const [selected, setSelected] = useState<ObservationMarker | null>(null);
   const [located, setLocated] = useState<boolean | null>(null); // null = checking
   const [onlyRare, setOnlyRare] = useState(false);
+  const [fetchFailed, setFetchFailed] = useState(false);
 
   // Fetch pins for the currently-visible bounds. getVisibleBounds returns
   // [[maxLng, maxLat], [minLng, minLat]] (NE, SW corners).
@@ -45,8 +46,12 @@ export default function MapScreen() {
       const bbox = `${sw[0]},${sw[1]},${ne[0]},${ne[1]}`;
       const res = await api.get<ObservationsMapResponse>(`/observations?bbox=${bbox}`);
       setMarkers(res.markers);
-    } catch {
-      // Transient (pan before map ready, network) — keep the last good markers.
+      setFetchFailed(false);
+    } catch (e) {
+      // Keep the last good markers, but surface a non-blocking error so auth/API/privacy
+      // failures don't masquerade as "no discoveries nearby".
+      if (__DEV__) console.warn("[map] failed to load markers:", e);
+      setFetchFailed(true);
     }
   }, []);
 
@@ -117,6 +122,14 @@ export default function MapScreen() {
           <Icon name="star" size={18} color={onlyRare ? colors.rarity.RARE : colors.textMuted} />
           <Text style={styles.toggleText}>Rare</Text>
         </Pressable>
+
+        {fetchFailed ? (
+          <Pressable style={styles.errorBanner} onPress={fetchVisible}>
+            <Icon name="cloud-off" size={16} color={colors.danger} />
+            <Text style={styles.errorText}>Couldn{"’"}t refresh markers</Text>
+            <Text style={styles.errorRetry}>Retry</Text>
+          </Pressable>
+        ) : null}
       </SafeAreaView>
 
       {/* Recenter FAB */}
@@ -209,6 +222,20 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   toggleText: { ...typography.badge, color: colors.textMuted },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: spacing.sm,
+    backgroundColor: colors.surfaceLowest,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  errorText: { ...typography.caption, color: colors.danger },
+  errorRetry: { ...typography.badge, color: colors.primary },
   recenter: {
     position: "absolute",
     bottom: 200,
