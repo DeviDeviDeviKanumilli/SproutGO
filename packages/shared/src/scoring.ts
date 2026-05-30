@@ -11,6 +11,12 @@ export const SCORING = {
   dupCapIndex: 4, // floor stops decaying past the 4th dup
   minDupPoints: 1, // never award 0 for a valid capture
   dailySameSpeciesCap: 5, // OPEN_QUESTIONS #4 — tunable
+  // Capture rate limits — enforced BEFORE the expensive identify call to protect OpenAI
+  // cost and the DB from abuse (independent of the per-species points cap above).
+  captureWindowSeconds: 60,
+  captureWindowMax: 10, // max captures per rolling window
+  dailyCaptureCap: 100, // max total captures per UTC day
+  idempotencyWindowSeconds: 3600, // re-submitting the same imagePath within 1h is a no-op
 } as const;
 
 // AI auto-create confidence threshold (AI_INTEGRATION.md / SPEC §3.8, §7.3).

@@ -52,6 +52,47 @@ export async function POST(req: Request): Promise<NextResponse> {
       throw errors.forbidden("imagePath must be under your own storage prefix");
     }
 
+    // --- Rate limiting + idempotency (P1 #4), all BEFORE the expensive identify call ---
+    const nowMs = Date.now();
+
+    // Idempotency: re-submitting the same imagePath within the window returns the prior
+    // result instead of re-identifying / double-scoring, so client retries are safe.
+    const dup = await prisma.observation.findFirst({
+      where: {
+        userId,
+        imagePath,
+        createdAt: { gte: new Date(nowMs - SCORING.idempotencyWindowSeconds * 1000) },
+      },
+      include: { plant: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (dup) {
+      const replay: ObservationResult = {
+        observation: serializeObservation(dup),
+        plant: dup.plant ? serializePlant(dup.plant) : null,
+        confidence: dup.confidence,
+        isFirstDiscovery: false,
+        pointsAwarded: dup.pointsAwarded,
+        idStatus: dup.idStatus,
+        quotaReached: false,
+      };
+      return NextResponse.json(replay);
+    }
+
+    // Per-user rolling-window + daily total caps protect OpenAI spend and the DB.
+    const [recentCount, todayCount] = await Promise.all([
+      prisma.observation.count({
+        where: { userId, createdAt: { gte: new Date(nowMs - SCORING.captureWindowSeconds * 1000) } },
+      }),
+      prisma.observation.count({ where: { userId, createdAt: { gte: startOfUtcDay() } } }),
+    ]);
+    if (recentCount >= SCORING.captureWindowMax) {
+      throw errors.quota("You're capturing too fast — please wait a moment and try again.");
+    }
+    if (todayCount >= SCORING.dailyCaptureCap) {
+      throw errors.quota("Daily capture limit reached. Come back tomorrow!");
+    }
+
     // Before spending an identification, prove the image actually exists, is an image,
     // and is a sane size (P1 #3 — never mint observations from an arbitrary path). Real
     // ID runs against a short-lived signed URL; the offline stub (dev/test) skips this.

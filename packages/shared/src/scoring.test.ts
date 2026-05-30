@@ -50,4 +50,12 @@ describe("config + thresholds", () => {
     expect(SCORING.dailySameSpeciesCap).toBe(5);
     expect(MIN_AUTO_CREATE_CONFIDENCE).toBe(0.85);
   });
+
+  it("defines sane capture rate-limit caps", () => {
+    expect(SCORING.captureWindowSeconds).toBeGreaterThan(0);
+    expect(SCORING.captureWindowMax).toBeGreaterThan(0);
+    expect(SCORING.idempotencyWindowSeconds).toBeGreaterThan(0);
+    // A day's total cap must allow at least one full burst window.
+    expect(SCORING.dailyCaptureCap).toBeGreaterThanOrEqual(SCORING.captureWindowMax);
+  });
 });
