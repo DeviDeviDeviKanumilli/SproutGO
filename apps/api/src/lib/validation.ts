@@ -39,6 +39,13 @@ export const createObservationSchema = z.object({
 
 export type CreateObservationInput = z.infer<typeof createObservationSchema>;
 
+// PATCH /observations/:id — owner changes the visibility of an existing capture.
+export const updateObservationSchema = z.object({
+  privacy: z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]),
+});
+
+export type UpdateObservationInput = z.infer<typeof updateObservationSchema>;
+
 // GET /observations?bbox=minLng,minLat,maxLng,maxLat — map bounding-box query.
 // Parse the CSV string into this shape before validating.
 export const bboxSchema = z

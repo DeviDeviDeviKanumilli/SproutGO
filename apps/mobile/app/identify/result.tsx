@@ -2,21 +2,42 @@
 // badge holds the plant photo, a gold points pill animates in, and CTAs route to the
 // PlantDex entry. Renders the real ObservationResult from the capture store; handles the
 // UNCERTAIN (low-confidence) and quota-reached cases distinctly from a clean discovery.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Animated, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing, radius, typography } from "@/theme";
-import { Icon } from "@/components/Icon";
+import { Icon, type IconName } from "@/components/Icon";
 import { HexBadge } from "@/components/HexBadge";
 import { RarityBadge } from "@/components/ui";
 import { takeLastResult } from "@/lib/captureStore";
+import { api } from "@/lib/api";
+
+type Visibility = "PRIVATE" | "FRIENDS" | "PUBLIC";
+const VISIBILITY: { key: Visibility; label: string; icon: IconName }[] = [
+  { key: "PRIVATE", label: "Private", icon: "lock" },
+  { key: "FRIENDS", label: "Friends", icon: "group" },
+  { key: "PUBLIC", label: "Public", icon: "public" },
+];
 
 export default function IdentifyResult() {
   const router = useRouter();
   const result = useRef(takeLastResult()).current;
   const pop = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(80)).current;
+  // Captures are created PRIVATE; the user opts up to FRIENDS/PUBLIC here. Optimistic:
+  // reflect the choice immediately, revert if the PATCH fails.
+  const [privacy, setPrivacy] = useState<Visibility>(
+    (result?.observation.privacy as Visibility) ?? "PRIVATE",
+  );
+
+  function setVisibility(next: Visibility) {
+    if (!result || next === privacy) return;
+    setPrivacy(next);
+    api
+      .patch(`/observations/${result.observation.id}`, { privacy: next })
+      .catch(() => setPrivacy((result.observation.privacy as Visibility) ?? "PRIVATE"));
+  }
 
   useEffect(() => {
     Animated.parallel([
@@ -117,6 +138,29 @@ export default function IdentifyResult() {
               ) : null}
             </View>
 
+            {result.observation.latitude != null ? (
+              <View style={styles.privacyBlock}>
+                <Text style={styles.privacyLabel}>Who can see this location?</Text>
+                <View style={styles.privacyRow}>
+                  {VISIBILITY.map((v) => {
+                    const active = privacy === v.key;
+                    return (
+                      <Pressable
+                        key={v.key}
+                        onPress={() => setVisibility(v.key)}
+                        style={[styles.privacyChip, active && styles.privacyChipActive]}
+                      >
+                        <Icon name={v.icon} size={16} color={active ? colors.onPrimary : colors.textMuted} />
+                        <Text style={[styles.privacyChipText, active && { color: colors.onPrimary }]}>
+                          {v.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
             {plant.description ? (
               <View style={styles.about}>
                 <Text style={typography.sectionTitle}>About This Plant</Text>
@@ -206,6 +250,23 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   metaChipText: { ...typography.caption, color: colors.text },
+  privacyBlock: { width: "100%", marginBottom: spacing.lg, gap: spacing.sm },
+  privacyLabel: { ...typography.caption, fontWeight: "600", color: colors.textMuted },
+  privacyRow: { flexDirection: "row", gap: spacing.sm },
+  privacyChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceLowest,
+    borderWidth: 1,
+    borderColor: colors.sage,
+  },
+  privacyChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  privacyChipText: { ...typography.badge, color: colors.textMuted },
   about: {
     width: "100%",
     backgroundColor: colors.surface,
