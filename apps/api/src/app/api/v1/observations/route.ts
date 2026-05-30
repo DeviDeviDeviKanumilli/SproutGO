@@ -296,7 +296,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       .slice(0, MAX_MARKERS);
 
     const body: ObservationsMapResponse = {
-      markers: observations.map((o) => serializeObservationMarker(o, userId)),
+      markers: observations.map((o) => serializeObservationMarker(o, userId, friendIds)),
     };
     return NextResponse.json(body);
   } catch (err) {

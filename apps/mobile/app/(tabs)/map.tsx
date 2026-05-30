@@ -4,7 +4,7 @@
 // NOTE: @rnmapbox/maps is native — needs the custom EAS dev build (TECH_RISKS R1),
 // it does NOT run in Expo Go.
 import { useCallback, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Image } from "react-native";
+import { View, Text, StyleSheet, Pressable, Image, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import Mapbox from "@rnmapbox/maps";
@@ -23,6 +23,14 @@ const MAP_STYLE = "mapbox://styles/mapbox/outdoors-v12";
 const DEFAULT_CENTER: [number, number] = [-74.4, 40.5];
 const DEFAULT_ZOOM = 12;
 
+// Map layers the user can toggle (PRD: friend/community discoveries as separate layers).
+const LAYERS = [
+  { key: "all", label: "All", icon: "public" },
+  { key: "own", label: "Mine", icon: "person-pin-circle" },
+  { key: "friend", label: "Friends", icon: "group" },
+  { key: "public", label: "Community", icon: "groups" },
+] as const;
+
 function pinColor(m: ObservationMarker): string {
   return m.plant ? colors.rarity[m.plant.rarity] : colors.outline;
 }
@@ -34,6 +42,7 @@ export default function MapScreen() {
   const [selected, setSelected] = useState<ObservationMarker | null>(null);
   const [located, setLocated] = useState<boolean | null>(null); // null = checking
   const [onlyRare, setOnlyRare] = useState(false);
+  const [layer, setLayer] = useState<"all" | "own" | "friend" | "public">("all");
   const [fetchFailed, setFetchFailed] = useState(false);
 
   // Fetch pins for the currently-visible bounds. getVisibleBounds returns
@@ -80,9 +89,11 @@ export default function MapScreen() {
     }, []),
   );
 
-  const visibleMarkers = onlyRare
-    ? markers.filter((m) => m.rarity === "RARE" || m.rarity === "LEGENDARY")
-    : markers;
+  const visibleMarkers = markers.filter((m) => {
+    if (layer !== "all" && m.source !== layer) return false;
+    if (onlyRare && m.rarity !== "RARE" && m.rarity !== "LEGENDARY") return false;
+    return true;
+  });
 
   return (
     <View style={styles.root}>
@@ -113,15 +124,34 @@ export default function MapScreen() {
         ))}
       </Mapbox.MapView>
 
-      {/* Floating filter toggle */}
+      {/* Floating filters: layer (Mine/Friends/Community) + rare-only */}
       <SafeAreaView edges={["top"]} style={styles.topBar}>
-        <Pressable
-          style={[styles.toggle, onlyRare && { borderColor: colors.rarity.RARE }]}
-          onPress={() => setOnlyRare((v) => !v)}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
         >
-          <Icon name="star" size={18} color={onlyRare ? colors.rarity.RARE : colors.textMuted} />
-          <Text style={styles.toggleText}>Rare</Text>
-        </Pressable>
+          {LAYERS.map((l) => {
+            const active = layer === l.key;
+            return (
+              <Pressable
+                key={l.key}
+                style={[styles.toggle, active && styles.toggleActive]}
+                onPress={() => setLayer(l.key)}
+              >
+                <Icon name={l.icon} size={16} color={active ? colors.onPrimary : colors.textMuted} />
+                <Text style={[styles.toggleText, active && { color: colors.onPrimary }]}>{l.label}</Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            style={[styles.toggle, onlyRare && { borderColor: colors.rarity.RARE }]}
+            onPress={() => setOnlyRare((v) => !v)}
+          >
+            <Icon name="star" size={16} color={onlyRare ? colors.rarity.RARE : colors.textMuted} />
+            <Text style={styles.toggleText}>Rare</Text>
+          </Pressable>
+        </ScrollView>
 
         {fetchFailed ? (
           <Pressable style={styles.errorBanner} onPress={fetchVisible}>
@@ -209,7 +239,8 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   pinDot: { width: 12, height: 12, borderRadius: 6 },
-  topBar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "flex-end", paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  topBar: { position: "absolute", top: 0, left: 0, right: 0, paddingTop: spacing.sm },
+  filterRow: { gap: spacing.sm, paddingHorizontal: spacing.md },
   toggle: {
     flexDirection: "row",
     alignItems: "center",
@@ -221,6 +252,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  toggleActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   toggleText: { ...typography.badge, color: colors.textMuted },
   errorBanner: {
     flexDirection: "row",

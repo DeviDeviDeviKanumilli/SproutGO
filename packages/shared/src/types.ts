@@ -98,6 +98,8 @@ export interface ObservationMarker {
   longitude: number;
   rarity: Rarity | null; // null when UNCERTAIN / no plant linked
   isOwn: boolean; // viewer is the owner — sees exact coords
+  // Relationship to the viewer — drives the map layer toggles (Mine / Friends / Community).
+  source: "own" | "friend" | "public";
   fuzzed: boolean; // coords were snapped for rare-plant privacy
   plant: {
     id: string;
@@ -297,6 +299,7 @@ export const FORUM_CATEGORIES = [
   { key: "PLANT_ID", label: "Plant ID Help" },
   { key: "LOCAL_TRAILS", label: "Local Trails" },
   { key: "RARE_FINDS", label: "Rare Finds" },
+  { key: "GARDENING", label: "Gardening" },
   { key: "PHOTOGRAPHY", label: "Nature Photography" },
   { key: "GENERAL", label: "General Discussion" },
 ] as const;

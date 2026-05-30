@@ -164,8 +164,14 @@ export function serializeComment(row: CommentRow & { user: ProfileRow }): Commen
 export function serializeObservationMarker(
   row: ObservationRow & { plant: PlantRow | null },
   viewerId: string,
+  friendIds: readonly string[] = [],
 ): ObservationMarker {
   const isOwn = row.userId === viewerId;
+  const source: ObservationMarker["source"] = isOwn
+    ? "own"
+    : friendIds.includes(row.userId)
+      ? "friend"
+      : "public";
   const rarity = row.plant?.rarity ?? null;
   const sensitive = shouldFuzz(rarity, row.plant?.nativeStatus ?? null);
 
@@ -207,6 +213,7 @@ export function serializeObservationMarker(
     longitude,
     rarity,
     isOwn,
+    source,
     fuzzed,
     plant: row.plant
       ? {

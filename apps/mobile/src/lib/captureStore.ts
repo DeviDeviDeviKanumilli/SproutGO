@@ -15,6 +15,12 @@ export function setPendingPhoto(uri: string, coords: Coords | null = null): void
   pendingCoords = coords;
 }
 
+// Read the pending photo WITHOUT consuming it (the preview screen needs to display it before
+// the user confirms; processing then consumes it with takePendingPhoto).
+export function peekPendingPhoto(): { uri: string; coords: Coords | null } | null {
+  return pendingPhotoUri ? { uri: pendingPhotoUri, coords: pendingCoords } : null;
+}
+
 export function takePendingPhoto(): { uri: string; coords: Coords | null } | null {
   if (!pendingPhotoUri) return null;
   const out = { uri: pendingPhotoUri, coords: pendingCoords };

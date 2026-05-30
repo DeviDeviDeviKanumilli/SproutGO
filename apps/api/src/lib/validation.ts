@@ -135,6 +135,7 @@ export const forumCategorySchema = z.enum([
   "PLANT_ID",
   "LOCAL_TRAILS",
   "RARE_FINDS",
+  "GARDENING",
   "PHOTOGRAPHY",
   "GENERAL",
 ]);

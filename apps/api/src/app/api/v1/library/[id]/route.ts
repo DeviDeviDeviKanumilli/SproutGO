@@ -71,8 +71,8 @@ export async function GET(
 
     const body: PlantDetailResponse = {
       plant: serializePlant(plant),
-      communityPhotos: photoRows.map((o) => serializeObservationMarker(o, userId)),
-      sightings: sightingRows.map((o) => serializeObservationMarker(o, userId)),
+      communityPhotos: photoRows.map((o) => serializeObservationMarker(o, userId, friendIds)),
+      sightings: sightingRows.map((o) => serializeObservationMarker(o, userId, friendIds)),
     };
     return NextResponse.json(body);
   } catch (err) {

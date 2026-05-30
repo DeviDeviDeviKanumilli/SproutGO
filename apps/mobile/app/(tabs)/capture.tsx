@@ -30,7 +30,8 @@ export default function CaptureScreen() {
         // is created without a location (identify still works, just no map pin, R6).
         const coords = await requestAndGetPosition();
         setPendingPhoto(photo.uri, coords);
-        router.push("/identify/processing");
+        // Confirm/retake before spending an AI call (PRD preview step).
+        router.push("/identify/preview");
       }
     } finally {
       setBusy(false);
