@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Plant } from "@sproutgo/shared";
 import { NativeStatus, Rarity, PlantType, IdSource } from "@sproutgo/shared";
-import { compareBy } from "./route";
+import { compareBy } from "@/lib/librarySort";
 
 // compareBy powers GET /library's in-memory sort (the rarity-tier order Prisma's alphabetical
 // enum sort can't express, plus name/recent). It sorts a serialized Plant[]; we feed minimal
