@@ -5,12 +5,16 @@
 // all transactionally so Profile.totalPoints and timesObserved never drift.
 
 import { NextResponse } from "next/server";
-import { Prisma, IdSource, IdStatus } from "@sproutgo/db";
+import { Prisma, IdSource, IdStatus, Privacy } from "@sproutgo/db";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { errors, errorResponse } from "@/lib/errors";
-import { createObservationSchema } from "@/lib/validation";
-import { serializePlant, serializeObservation } from "@/lib/serializers";
+import { createObservationSchema, parseBbox } from "@/lib/validation";
+import {
+  serializePlant,
+  serializeObservation,
+  serializeObservationMarker,
+} from "@/lib/serializers";
 import {
   MIN_AUTO_CREATE_CONFIDENCE,
   SCORING,
@@ -18,9 +22,13 @@ import {
   duplicatePoints,
 } from "@/config/scoring";
 import { getPlantIdentifier } from "@/lib/identify";
-import type { ObservationResult } from "@sproutgo/shared";
+import type { ObservationResult, ObservationsMapResponse } from "@sproutgo/shared";
 
 export const dynamic = "force-dynamic";
+
+// Cap how many markers a single bbox query can return — a wide zoom over a dense area
+// shouldn't ship thousands of pins. The client re-queries as the viewport changes.
+const MAX_MARKERS = 500;
 
 function startOfUtcDay(): Date {
   const now = new Date();
@@ -154,6 +162,53 @@ export async function POST(req: Request): Promise<NextResponse> {
     });
 
     return NextResponse.json(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+// GET /api/v1/observations?bbox=minLng,minLat,maxLng,maxLat — discovery pins for the map.
+// Privacy is enforced entirely in the Prisma `where` (R3: service-role Prisma bypasses
+// RLS, so this is the only guard). Returns own observations at any privacy, others' only
+// if PUBLIC or FRIENDS-with-an-accepted-friendship. Rare-plant coords are fuzzed in the
+// serializer for non-owners.
+export async function GET(req: Request): Promise<NextResponse> {
+  try {
+    const { userId } = await requireAuth(req);
+
+    const bbox = parseBbox(new URL(req.url).searchParams.get("bbox"));
+    if (!bbox) {
+      throw errors.validation("bbox=minLng,minLat,maxLng,maxLat is required and must be valid");
+    }
+
+    // Accepted friendships are materialized one row per pair (userAId < userBId), so the
+    // viewer may sit in either column — collect friend ids from both sides.
+    const friendships = await prisma.friendship.findMany({
+      where: { OR: [{ userAId: userId }, { userBId: userId }] },
+      select: { userAId: true, userBId: true },
+    });
+    const friendIds = friendships.map((f) => (f.userAId === userId ? f.userBId : f.userAId));
+
+    const observations = await prisma.observation.findMany({
+      where: {
+        latitude: { gte: bbox.minLat, lte: bbox.maxLat, not: null },
+        longitude: { gte: bbox.minLng, lte: bbox.maxLng, not: null },
+        plantId: { not: null },
+        OR: [
+          { userId },
+          { privacy: Privacy.PUBLIC },
+          { privacy: Privacy.FRIENDS, userId: { in: friendIds } },
+        ],
+      },
+      include: { plant: true },
+      orderBy: { createdAt: "desc" },
+      take: MAX_MARKERS,
+    });
+
+    const body: ObservationsMapResponse = {
+      markers: observations.map((o) => serializeObservationMarker(o, userId)),
+    };
+    return NextResponse.json(body);
   } catch (err) {
     return errorResponse(err);
   }

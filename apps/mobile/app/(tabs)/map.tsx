@@ -1,118 +1,186 @@
-// Map tab (Stitch Map Screen). Ambient grid "map" with floating search + filter,
-// Friends/Rare toggles, recenter FAB, rarity-colored pin markers, a pulsing user
-// location dot, and a bottom-sheet preview for the selected marker. Mock-driven.
-import { useState } from "react";
-import { View, Text, StyleSheet, Pressable, Image, TextInput, type DimensionValue } from "react-native";
+// Map tab — real @rnmapbox/maps exploration map. Discovery pins are fetched from
+// GET /observations?bbox= as the viewport settles; rare-plant coords arrive already
+// fuzzed server-side. Tapping a pin opens a preview sheet that routes to the plant.
+// NOTE: @rnmapbox/maps is native — needs the custom EAS dev build (TECH_RISKS R1),
+// it does NOT run in Expo Go.
+import { useCallback, useRef, useState } from "react";
+import { View, Text, StyleSheet, Pressable, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
+import Mapbox from "@rnmapbox/maps";
+import type { ObservationMarker, ObservationsMapResponse } from "@sproutgo/shared";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
 import { RarityBadge } from "@/components/ui";
-import { mapMarkers, plantById } from "@/lib/mockData";
+import { api } from "@/lib/api";
+import { requestAndGetPosition, hasLocationPermission } from "@/lib/location";
 
+Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? "");
+
+// Outdoors style — green, trail-oriented; matches the "nature" design intent.
+const MAP_STYLE = "mapbox://styles/mapbox/outdoors-v12";
+// Fallback center when location is unavailable: the NJ seed region (OPEN_QUESTIONS #1).
+const DEFAULT_CENTER: [number, number] = [-74.4, 40.5];
+const DEFAULT_ZOOM = 12;
+
+function pinColor(m: ObservationMarker): string {
+  return m.plant ? colors.rarity[m.plant.rarity] : colors.outline;
+}
 export default function MapScreen() {
   const router = useRouter();
-  const [selected, setSelected] = useState(mapMarkers[3]!);
-  const plant = plantById(selected.plantId)!;
+  const mapRef = useRef<Mapbox.MapView>(null);
+  const cameraRef = useRef<Mapbox.Camera>(null);
+  const [markers, setMarkers] = useState<ObservationMarker[]>([]);
+  const [selected, setSelected] = useState<ObservationMarker | null>(null);
+  const [located, setLocated] = useState<boolean | null>(null); // null = checking
+  const [onlyRare, setOnlyRare] = useState(false);
+
+  // Fetch pins for the currently-visible bounds. getVisibleBounds returns
+  // [[maxLng, maxLat], [minLng, minLat]] (NE, SW corners).
+  const fetchVisible = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map) return;
+    try {
+      const [ne, sw] = await map.getVisibleBounds();
+      const bbox = `${sw[0]},${sw[1]},${ne[0]},${ne[1]}`;
+      const res = await api.get<ObservationsMapResponse>(`/observations?bbox=${bbox}`);
+      setMarkers(res.markers);
+    } catch {
+      // Transient (pan before map ready, network) — keep the last good markers.
+    }
+  }, []);
+
+  // On focus, resolve location permission + center on the user if granted.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        const granted = await hasLocationPermission();
+        if (!active) return;
+        setLocated(granted);
+        if (granted) {
+          const pos = await requestAndGetPosition();
+          if (active && pos) {
+            cameraRef.current?.setCamera({
+              centerCoordinate: [pos.longitude, pos.latitude],
+              zoomLevel: DEFAULT_ZOOM,
+              animationDuration: 600,
+            });
+          }
+        }
+      })();
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
+  const visibleMarkers = onlyRare
+    ? markers.filter((m) => m.rarity === "RARE" || m.rarity === "LEGENDARY")
+    : markers;
 
   return (
     <View style={styles.root}>
-      <View style={styles.mapBg}>
-        {[...Array(10)].map((_, i) => (
-          <View key={`h${i}`} style={[styles.gridLine, { top: `${i * 11}%` }]} />
+      <Mapbox.MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFill}
+        styleURL={MAP_STYLE}
+        onMapIdle={fetchVisible}
+        scaleBarEnabled={false}
+      >
+        <Mapbox.Camera
+          ref={cameraRef}
+          defaultSettings={{ centerCoordinate: DEFAULT_CENTER, zoomLevel: DEFAULT_ZOOM }}
+        />
+        {located ? <Mapbox.UserLocation visible androidRenderMode="normal" /> : null}
+
+        {visibleMarkers.map((m) => (
+          <Mapbox.PointAnnotation
+            key={m.id}
+            id={m.id}
+            coordinate={[m.longitude, m.latitude]}
+            onSelected={() => setSelected(m)}
+          >
+            <View style={[styles.pin, { borderColor: pinColor(m) }]}>
+              <View style={[styles.pinDot, { backgroundColor: pinColor(m) }]} />
+            </View>
+          </Mapbox.PointAnnotation>
         ))}
-        {[...Array(7)].map((_, i) => (
-          <View key={`v${i}`} style={[styles.gridLineV, { left: `${i * 16}%` }]} />
-        ))}
-      </View>
+      </Mapbox.MapView>
 
-      {/* Markers */}
-      {mapMarkers.map((m) => (
-        <Pressable
-          key={m.id}
-          onPress={() => setSelected(m)}
-          style={[styles.marker, { top: m.top as DimensionValue, left: m.left as DimensionValue }]}
-        >
-          <View style={[styles.pin, { borderColor: colors.rarity[m.rarity] }]}>
-            <View style={[styles.pinDot, { backgroundColor: colors.rarity[m.rarity] }]} />
-          </View>
-        </Pressable>
-      ))}
-
-      {/* User location */}
-      <View style={[styles.userDot, { top: "55%", left: "40%" }]}>
-        <View style={styles.userPulse} />
-        <View style={styles.userCore} />
-      </View>
-
-      {/* Floating search + filter */}
+      {/* Floating filter toggle */}
       <SafeAreaView edges={["top"]} style={styles.topBar}>
-        <View style={styles.searchPill}>
-          <Icon name="search" size={20} color={colors.textMuted} />
-          <TextInput
-            placeholder="Search parks, plants..."
-            placeholderTextColor={colors.textMuted}
-            style={styles.searchInput}
-          />
-        </View>
-        <Pressable style={styles.iconPill}>
-          <Icon name="tune" size={22} color={colors.textMuted} />
+        <Pressable
+          style={[styles.toggle, onlyRare && { borderColor: colors.rarity.RARE }]}
+          onPress={() => setOnlyRare((v) => !v)}
+        >
+          <Icon name="star" size={18} color={onlyRare ? colors.rarity.RARE : colors.textMuted} />
+          <Text style={styles.toggleText}>Rare</Text>
         </Pressable>
       </SafeAreaView>
 
-      {/* Toggles */}
-      <View style={styles.toggles}>
-        <Pressable style={styles.toggle}>
-          <Icon name="group" size={18} color={colors.primary} />
-          <Text style={styles.toggleText}>Friends</Text>
-        </Pressable>
-        <Pressable style={[styles.toggle, { borderColor: colors.rarity.RARE }]}>
-          <Icon name="star" size={18} color={colors.rarity.RARE} />
-          <Text style={styles.toggleText}>Rare</Text>
-        </Pressable>
-      </View>
-
-      {/* Recenter */}
-      <Pressable style={styles.recenter}>
+      {/* Recenter FAB */}
+      <Pressable
+        style={styles.recenter}
+        onPress={async () => {
+          const pos = await requestAndGetPosition();
+          setLocated(!!pos);
+          if (pos) {
+            cameraRef.current?.setCamera({
+              centerCoordinate: [pos.longitude, pos.latitude],
+              zoomLevel: DEFAULT_ZOOM,
+              animationDuration: 600,
+            });
+          }
+        }}
+      >
         <Icon name="my-location" size={24} color={colors.primary} />
       </Pressable>
 
-      {/* Bottom preview sheet */}
-      <Pressable style={styles.sheet} onPress={() => router.push(`/plant/${plant.id}`)}>
-        <View style={styles.handle} />
-        <View style={styles.sheetRow}>
-          <View style={styles.thumbWrap}>
-            {plant.imageUrl ? <Image source={{ uri: plant.imageUrl }} style={styles.thumb} /> : null}
-            <View style={[styles.thumbDot, { backgroundColor: colors.rarity[plant.rarity] }]} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <View style={styles.sheetTop}>
-              <RarityBadge rarity={plant.rarity} />
-              <View style={styles.distance}>
-                <Icon name="location-on" size={14} color={colors.textMuted} />
-                <Text style={typography.caption}>12m</Text>
-              </View>
-            </View>
-            <Text style={[typography.sectionTitle, { marginTop: 4 }]} numberOfLines={1}>
-              {plant.commonName}
-            </Text>
-            <Text style={typography.scientificName} numberOfLines={1}>
-              {plant.scientificName}
-            </Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={colors.textMuted} />
+      {located === false ? (
+        <View style={styles.deniedBanner}>
+          <Icon name="location-off" size={18} color={colors.textMuted} />
+          <Text style={styles.deniedText}>Enable location to see nearby discoveries</Text>
         </View>
-      </Pressable>
+      ) : null}
+
+      {selected?.plant ? (
+        <Pressable style={styles.sheet} onPress={() => router.push(`/plant/${selected.plant!.id}`)}>
+          <View style={styles.handle} />
+          <View style={styles.sheetRow}>
+            <View style={styles.thumbWrap}>
+              {selected.plant.imageUrl ? (
+                <Image source={{ uri: selected.plant.imageUrl }} style={styles.thumb} />
+              ) : null}
+              <View style={[styles.thumbDot, { backgroundColor: pinColor(selected) }]} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.sheetTop}>
+                <RarityBadge rarity={selected.plant.rarity} />
+                {selected.fuzzed ? (
+                  <View style={styles.distance}>
+                    <Icon name="location-on" size={14} color={colors.textMuted} />
+                    <Text style={typography.caption}>Approx.</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={[typography.sectionTitle, { marginTop: 4 }]} numberOfLines={1}>
+                {selected.plant.commonName ?? selected.plant.scientificName}
+              </Text>
+              <Text style={typography.scientificName} numberOfLines={1}>
+                {selected.plant.scientificName}
+              </Text>
+            </View>
+            <Icon name="chevron-right" size={24} color={colors.textMuted} />
+          </View>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surfaceContainer },
-  mapBg: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.surfaceContainer },
-  gridLine: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(178,194,178,0.25)" },
-  gridLineV: { position: "absolute", top: 0, bottom: 0, width: 1, backgroundColor: "rgba(178,194,178,0.25)" },
-  marker: { position: "absolute", transform: [{ translateX: -16 }, { translateY: -32 }] },
   pin: {
     width: 30,
     height: 30,
@@ -128,34 +196,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   pinDot: { width: 12, height: 12, borderRadius: 6 },
-  userDot: { position: "absolute", width: 24, height: 24, alignItems: "center", justifyContent: "center" },
-  userPulse: { position: "absolute", width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(0,108,12,0.2)" },
-  userCore: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.primary, borderWidth: 2, borderColor: colors.surfaceLowest },
-  topBar: { position: "absolute", top: 0, left: 0, right: 0, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-  searchPill: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    height: 48,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-  },
-  searchInput: { flex: 1, ...typography.body, paddingVertical: 0 },
-  iconPill: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  toggles: { position: "absolute", top: 120, right: spacing.md, gap: spacing.sm, alignItems: "flex-end" },
+  topBar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "flex-end", paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   toggle: {
     flexDirection: "row",
     alignItems: "center",
@@ -181,6 +222,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // PLACEHOLDER_STYLES2
+  deniedBanner: {
+    position: "absolute",
+    top: 64,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  deniedText: { ...typography.caption },
   sheet: {
     position: "absolute",
     bottom: 96,
@@ -205,3 +262,5 @@ const styles = StyleSheet.create({
   sheetTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   distance: { flexDirection: "row", alignItems: "center", gap: 2 },
 });
+
+

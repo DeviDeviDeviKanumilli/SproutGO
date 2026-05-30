@@ -4,8 +4,8 @@ const nextConfig = {
   // Workspace packages are TS source; let Next transpile them.
   transpilePackages: ["@sproutgo/shared", "@sproutgo/db"],
   experimental: {
-    // Prisma must not be bundled into serverless functions.
-    serverComponentsExternalPackages: ["@prisma/client", "@sproutgo/db"],
+    // Prisma engine must not be bundled; @sproutgo/db is transpiled from TS source.
+    serverComponentsExternalPackages: ["@prisma/client"],
   },
 };
 

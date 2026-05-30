@@ -1,7 +1,8 @@
 // Capture tab (Stitch Camera Screen). Live expo-camera viewfinder with a framing
 // reticle, top close/flash controls, an instruction bubble, and a shutter that takes a
-// photo and kicks off identification. NOTE: expo-camera does NOT run in Expo Go — needs
-// a custom EAS dev build (same constraint as Mapbox, TECH_RISKS R1).
+// photo, grabs best-effort GPS, and kicks off identification. (expo-camera itself runs
+// in Expo Go; the app as a whole needs a dev build because the Map tab pulls in
+// @rnmapbox/maps — see currentPlans/DEV_BUILD.md and TECH_RISKS R1.)
 import { useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { CameraView, useCameraPermissions, type FlashMode } from "expo-camera";
@@ -10,6 +11,7 @@ import { useRouter } from "expo-router";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
 import { setPendingPhoto } from "@/lib/captureStore";
+import { requestAndGetPosition } from "@/lib/location";
 
 export default function CaptureScreen() {
   const router = useRouter();
@@ -24,7 +26,10 @@ export default function CaptureScreen() {
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
       if (photo?.uri) {
-        setPendingPhoto(photo.uri);
+        // Best-effort GPS — if denied/unavailable, coords is null and the observation
+        // is created without a location (identify still works, just no map pin, R6).
+        const coords = await requestAndGetPosition();
+        setPendingPhoto(photo.uri, coords);
         router.push("/identify/processing");
       }
     } finally {

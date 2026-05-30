@@ -6,12 +6,17 @@ hits them with a plan, not a surprise.
 > Cross-refs: stack/env from [REPO_STRUCTURE](./REPO_STRUCTURE.md); AI accuracy from
 > [AI_INTEGRATION](./AI_INTEGRATION.md); seeding from [LIBRARY_SEED](./LIBRARY_SEED.md).
 
-## R1 — Mapbox needs a custom Expo dev build (HIGH likelihood)
-`@rnmapbox/maps` contains native code and **does not run in Expo Go.** Trying to develop the
-map in Expo Go will simply fail.
-- **Mitigation:** plan for a **custom EAS dev build** from M0. Add the rnmapbox config plugin
-  in `app.config.ts`. Budget time for first iOS/Android dev-build setup (provisioning,
-  Android SDK). Don't schedule map work (M2) before a dev build is confirmed working.
+## R1 — Mapbox needs a custom dev build (HIGH likelihood)
+`@rnmapbox/maps` ships its own native code and **does not run in Expo Go.** Because the
+Map tab imports it, the whole app now requires a custom dev build to launch — Expo Go
+will crash on the Map tab. (Note: `expo-camera` and `expo-location` DO run in Expo Go;
+Mapbox is the sole forcing function.)
+- **Mitigation:** build a **custom dev build** (`expo-dev-client`). On this Mac the
+  local Xcode toolchain is already present, so `npm run prebuild:ios && npm run ios` is
+  the fastest path; EAS cloud builds are the alternative. Full step-by-step (Mapbox
+  tokens, iOS/EAS routes, Android caveats, troubleshooting) is in
+  [DEV_BUILD](./DEV_BUILD.md). The rnmapbox config plugin is wired in `app.config.ts`
+  and `apps/mobile/eas.json` is in place.
 
 ## R2 — Prisma + Supabase serverless connection exhaustion (HIGH)
 Vercel functions are serverless; each invocation can open a DB connection. Postgres connection

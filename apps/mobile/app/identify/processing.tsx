@@ -19,7 +19,8 @@ export default function Processing() {
   const { session } = useAuth();
   const scan = useRef(new Animated.Value(0)).current;
   const [error, setError] = useState<string | null>(null);
-  const photoUri = useRef(takePendingPhoto()).current;
+  const pending = useRef(takePendingPhoto()).current;
+  const photoUri = pending?.uri ?? null;
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -41,7 +42,12 @@ export default function Processing() {
       }
       try {
         const imagePath = await uploadObservationPhoto(photoUri, userId);
-        const result = await api.post<ObservationResult>("/observations", { imagePath });
+        const result = await api.post<ObservationResult>("/observations", {
+          imagePath,
+          ...(pending?.coords
+            ? { latitude: pending.coords.latitude, longitude: pending.coords.longitude }
+            : {}),
+        });
         if (cancelled) return;
         setLastResult(result);
         router.replace("/identify/result");
