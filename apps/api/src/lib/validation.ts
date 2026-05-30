@@ -3,6 +3,16 @@
 
 import { z } from "zod";
 
+// Server-side 13+ attestation (SECURITY_AND_PRIVACY §audience). The client signup check
+// is UX-only and bypassable, so age is enforced here at profile creation.
+const atLeast13 = (dob: string): boolean => {
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return false;
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 13);
+  return d <= cutoff;
+};
+
 export const createProfileSchema = z.object({
   username: z
     .string()
@@ -10,6 +20,10 @@ export const createProfileSchema = z.object({
     .min(3, "Username must be at least 3 characters")
     .max(30, "Username must be at most 30 characters")
     .regex(/^[a-zA-Z0-9_]+$/, "Username may only contain letters, numbers, and underscores"),
+  dateOfBirth: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "dateOfBirth must be YYYY-MM-DD")
+    .refine(atLeast13, "You must be at least 13 years old to use SproutGo"),
   avatarUrl: z.string().url().optional(),
   bio: z.string().max(300).optional(),
 });

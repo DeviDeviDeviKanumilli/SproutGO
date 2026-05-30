@@ -39,7 +39,7 @@ export default function Signup() {
     }
     setBusy(true);
     try {
-      await signUp(email.trim(), password);
+      await signUp(email.trim(), password, dob.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not sign up");
     } finally {

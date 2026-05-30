@@ -22,10 +22,20 @@ export async function requireAuth(req: Request): Promise<AuthContext> {
   let payload: Record<string, unknown>;
   try {
     const secret = new TextEncoder().encode(env.supabaseJwtSecret);
-    const verified = await jwtVerify(token, secret);
+    // Defense-in-depth (Prisma bypasses RLS): constrain the issuer and audience to this
+    // Supabase project's end-user tokens, not just a valid signature.
+    const verified = await jwtVerify(token, secret, {
+      issuer: `${env.supabaseUrl}/auth/v1`,
+      audience: "authenticated",
+    });
     payload = verified.payload as Record<string, unknown>;
   } catch {
     throw errors.unauthenticated("Invalid or expired token");
+  }
+
+  // Reject service-role / non-end-user tokens even if signed with the same secret.
+  if (payload.role !== "authenticated") {
+    throw errors.unauthenticated("Token is not an authenticated end-user token");
   }
 
   // Supabase puts the auth user id in `sub`.

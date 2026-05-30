@@ -16,7 +16,7 @@ interface AuthValue {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, dateOfBirth: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -45,8 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       },
-      signUp: async (email, password) => {
-        const { error } = await supabase.auth.signUp({ email, password });
+      signUp: async (email, password, dateOfBirth) => {
+        // Capture DOB as user metadata at signup so profile creation can attest 13+
+        // server-side (the UI check is bypassable; the API is the real gate).
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { date_of_birth: dateOfBirth } },
+        });
         if (error) throw error;
       },
       signOut: async () => {

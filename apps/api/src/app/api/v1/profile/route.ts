@@ -31,6 +31,8 @@ export async function POST(req: Request): Promise<NextResponse> {
         data: {
           id: userId,
           username: parsed.data.username,
+          // 13+ enforced by the schema refine — stored as the server's age attestation.
+          dateOfBirth: new Date(parsed.data.dateOfBirth),
           avatarUrl: parsed.data.avatarUrl ?? null,
           bio: parsed.data.bio ?? null,
         },
