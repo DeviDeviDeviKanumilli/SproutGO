@@ -25,7 +25,9 @@ export async function requireAuth(req: Request): Promise<AuthContext> {
     // Defense-in-depth (Prisma bypasses RLS): constrain the issuer and audience to this
     // Supabase project's end-user tokens, not just a valid signature.
     const verified = await jwtVerify(token, secret, {
-      issuer: `${env.supabaseUrl}/auth/v1`,
+      // Normalize a possible trailing slash so SUPABASE_URL="https://x.supabase.co/" still
+      // matches the real issuer "https://x.supabase.co/auth/v1".
+      issuer: `${env.supabaseUrl.replace(/\/$/, "")}/auth/v1`,
       audience: "authenticated",
     });
     payload = verified.payload as Record<string, unknown>;

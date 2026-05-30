@@ -82,20 +82,24 @@ describe("serializeObservationMarker", () => {
     expect(marker.longitude).toBe(LNG);
   });
 
-  it("non-owner uses the STORED public coords (not a re-snap of exact)", () => {
-    // Sentinel public coords distinct from snapToGrid(exact) prove we read the stored
-    // columns rather than recomputing — this is what closes the bbox-probe hole.
+  it("non-owner of a sensitive plant gets the stored public coords RE-SNAPPED (defense-in-depth)", () => {
+    // Off-grid stored coords simulate a plant auto-created COMMON (exact public coords)
+    // then reclassified RARE. The serializer must re-snap at read time so the exact point
+    // never leaks even though the stored column wasn't backfilled.
+    const offGrid = { lat: 12.3456, lng: -65.4321 };
     const row = observation({
       userId: OWNER,
       plant: plant({ rarity: "RARE" }),
-      publicLatitude: 1.23,
-      publicLongitude: 4.56,
+      publicLatitude: offGrid.lat,
+      publicLongitude: offGrid.lng,
     });
     const marker = serializeObservationMarker(row as never, VIEWER);
+    const snapped = snapToGrid(offGrid.lat, offGrid.lng);
     expect(marker.isOwn).toBe(false);
     expect(marker.fuzzed).toBe(true);
-    expect(marker.latitude).toBe(1.23);
-    expect(marker.longitude).toBe(4.56);
+    expect(marker.latitude).toBe(snapped.latitude);
+    expect(marker.longitude).toBe(snapped.longitude);
+    expect(marker.latitude).not.toBe(offGrid.lat); // proves it was coarsened
   });
 
   it("owner ignores public coords and still sees exact", () => {

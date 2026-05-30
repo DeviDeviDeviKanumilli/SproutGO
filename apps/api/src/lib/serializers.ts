@@ -112,9 +112,17 @@ export function serializeObservationMarker(
     latitude = row.latitude as number;
     longitude = row.longitude as number;
   } else if (row.publicLatitude != null && row.publicLongitude != null) {
-    // Non-owner: the persisted public coordinate is already exact-or-snapped.
+    // Non-owner: start from the persisted public coordinate, but re-snap at read time
+    // when the plant is currently sensitive. This is defense-in-depth against a plant
+    // that was auto-created COMMON (exact public coords stored) and LATER reclassified
+    // rare/invasive — snapping an already-snapped point is idempotent, so the serializer
+    // stays authoritative for the CURRENT rarity. (Reclassification should also backfill
+    // the stored columns so the bbox query can't be probed — see schema note.)
     latitude = row.publicLatitude;
     longitude = row.publicLongitude;
+    if (sensitive) {
+      ({ latitude, longitude } = snapToGrid(latitude, longitude));
+    }
     fuzzed = sensitive;
   } else {
     // Legacy rows written before publicLatitude existed — snap on the fly as a fallback.

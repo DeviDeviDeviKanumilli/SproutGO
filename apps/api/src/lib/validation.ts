@@ -45,7 +45,14 @@ export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 // imagePath is a Supabase Storage path; the route additionally enforces that it lives
 // under the caller's own prefix (never trust the client to scope itself).
 export const createObservationSchema = z.object({
-  imagePath: z.string().trim().min(1, "imagePath is required"),
+  imagePath: z
+    .string()
+    .trim()
+    .min(1, "imagePath is required")
+    // Storage keys are a flat namespace, but this string is the only path guard, so reject
+    // traversal/control chars defensively (the route also pins it under the caller prefix).
+    .regex(/^[A-Za-z0-9._\-/]+$/, "imagePath has invalid characters")
+    .refine((p) => !p.includes(".."), "imagePath may not contain '..'"),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   privacy: z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]).optional(),

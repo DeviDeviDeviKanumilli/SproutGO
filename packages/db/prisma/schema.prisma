@@ -133,7 +133,10 @@ model Observation {
   // snapped to a coarse grid at write time; otherwise they equal the exact coords. The
   // map bbox query filters NON-owner markers on THESE columns so a tiny bbox can't probe
   // a rare plant's exact point (SECURITY_AND_PRIVACY §location). Null until a plant is
-  // matched (UNCERTAIN captures never reach the map).
+  // matched (UNCERTAIN captures never reach the map). NOTE: if a Plant's rarity/
+  // nativeStatus is ever reclassified to sensitive AFTER capture, these columns must be
+  // backfilled (re-snapped) so the bbox query can't be probed for the exact point — the
+  // serializer re-snaps the OUTPUT defensively, but the query filters on these columns.
   publicLatitude  Float?
   publicLongitude Float?
   confidence    Float?
