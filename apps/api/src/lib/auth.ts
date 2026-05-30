@@ -1,0 +1,37 @@
+// JWT verification — the real authorization boundary (TECH_RISKS R3, SECURITY_AND_PRIVACY).
+// The mobile app sends the Supabase session JWT as `Authorization: Bearer <token>`.
+// We verify it with the project's JWT secret and resolve the caller's userId.
+// Writes ALWAYS use this id — never a client-supplied userId.
+
+import { jwtVerify } from "jose";
+import { env } from "./env";
+import { errors } from "./errors";
+
+export interface AuthContext {
+  userId: string;
+}
+
+/** Verify the Bearer token on a request and return the authenticated userId. */
+export async function requireAuth(req: Request): Promise<AuthContext> {
+  const header = req.headers.get("authorization") ?? req.headers.get("Authorization");
+  if (!header?.startsWith("Bearer ")) {
+    throw errors.unauthenticated("Missing Bearer token");
+  }
+  const token = header.slice("Bearer ".length).trim();
+
+  let payload: Record<string, unknown>;
+  try {
+    const secret = new TextEncoder().encode(env.supabaseJwtSecret);
+    const verified = await jwtVerify(token, secret);
+    payload = verified.payload as Record<string, unknown>;
+  } catch {
+    throw errors.unauthenticated("Invalid or expired token");
+  }
+
+  // Supabase puts the auth user id in `sub`.
+  const userId = typeof payload.sub === "string" ? payload.sub : null;
+  if (!userId) {
+    throw errors.unauthenticated("Token missing subject");
+  }
+  return { userId };
+}

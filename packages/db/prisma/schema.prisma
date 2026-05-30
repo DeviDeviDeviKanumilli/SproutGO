@@ -1,0 +1,252 @@
+// SproutGo database schema — transcribed from currentPlans/DATA_MODEL.md.
+// Backend is Prisma + Supabase Postgres. Profile.id mirrors Supabase auth.users.id.
+// Runtime connects via the pooler (DATABASE_URL, 6543); migrations use DIRECT_URL (5432).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums (mirror packages/shared/src/enums.ts — keep in sync)
+// ---------------------------------------------------------------------------
+
+enum Rarity {
+  COMMON
+  UNCOMMON
+  RARE
+  LEGENDARY
+}
+
+enum NativeStatus {
+  NATIVE
+  INTRODUCED
+  INVASIVE
+  UNKNOWN
+}
+
+enum Privacy {
+  PUBLIC
+  FRIENDS
+  PRIVATE
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  BLOCKED
+}
+
+enum IdStatus {
+  PENDING
+  MATCHED
+  UNCERTAIN
+}
+
+enum PlantType {
+  TREE
+  FLOWER
+  SHRUB
+  FERN
+  GRASS
+  OTHER
+}
+
+enum IdSource {
+  OPENAI
+  PLANTID
+  PLANTNET
+  SEED
+  MANUAL
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+/// Mirrors the Supabase auth user. id == auth.users.id (set on signup, no @default).
+model Profile {
+  id          String   @id @db.Uuid
+  username    String   @unique
+  avatarUrl   String?
+  bio         String?
+  totalPoints Int      @default(0)
+  isAdmin     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  observations     Observation[]
+  plantDexEntries  PlantDexEntry[]
+  posts            Post[]
+  likes            Like[]
+  comments         Comment[]
+  chatMessages     ChatMessage[]
+  sentRequests     FriendRequest[] @relation("SentRequests")
+  receivedRequests FriendRequest[] @relation("ReceivedRequests")
+}
+
+/// Global Library. scientificName is the primary match key for AI results.
+model Plant {
+  id             String       @id @default(uuid()) @db.Uuid
+  scientificName String       @unique
+  commonName     String?
+  family         String?
+  genus          String?
+  type           PlantType    @default(OTHER)
+  description    String?
+  habitat        String?
+  nativeStatus   NativeStatus @default(UNKNOWN)
+  rarity         Rarity       @default(COMMON)
+  imageUrl       String?
+  source         IdSource     @default(SEED)
+  confidence     Float?
+  createdAt      DateTime     @default(now())
+
+  observations    Observation[]
+  plantDexEntries PlantDexEntry[]
+  posts           Post[]
+  chatMessages    ChatMessage[]
+
+  @@index([commonName])
+  @@index([type])
+  @@index([rarity])
+  @@index([nativeStatus])
+}
+
+/// One discovery event. plantId is null while PENDING.
+model Observation {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  plantId       String?  @db.Uuid
+  imagePath     String
+  latitude      Float?
+  longitude     Float?
+  confidence    Float?
+  idStatus      IdStatus @default(PENDING)
+  privacy       Privacy  @default(PUBLIC)
+  pointsAwarded Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  user            Profile         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plant           Plant?          @relation(fields: [plantId], references: [id])
+  posts           Post[]
+  plantDexEntries PlantDexEntry[] @relation("FirstObservation")
+
+  @@index([userId])
+  @@index([plantId])
+  @@index([latitude, longitude])
+  @@index([createdAt])
+}
+
+/// Unique species per user — one row per discovered species.
+model PlantDexEntry {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @db.Uuid
+  plantId            String   @db.Uuid
+  firstDiscoveredAt  DateTime @default(now())
+  firstObservationId String?  @db.Uuid
+  timesObserved      Int      @default(1)
+
+  user             Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plant            Plant        @relation(fields: [plantId], references: [id])
+  firstObservation Observation? @relation("FirstObservation", fields: [firstObservationId], references: [id])
+
+  @@unique([userId, plantId])
+}
+
+/// Social feed / forum post.
+model Post {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  observationId   String?  @db.Uuid
+  plantId         String?  @db.Uuid
+  imagePath       String?
+  title           String?
+  caption         String?
+  category        String?
+  generalLocation String?
+  privacy         Privacy  @default(PUBLIC)
+  likeCount       Int      @default(0)
+  commentCount    Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  user        Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  observation Observation? @relation(fields: [observationId], references: [id])
+  plant       Plant?       @relation(fields: [plantId], references: [id])
+  likes       Like[]
+  comments    Comment[]
+
+  @@index([userId])
+  @@index([category])
+  @@index([createdAt])
+}
+
+/// One like per user per post (unique constraint).
+model Like {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  postId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+}
+
+model Comment {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @db.Uuid
+  userId    String   @db.Uuid
+  body      String
+  createdAt DateTime @default(now())
+
+  post Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+}
+
+model FriendRequest {
+  id          String       @id @default(uuid()) @db.Uuid
+  senderId    String       @db.Uuid
+  receiverId  String       @db.Uuid
+  status      FriendStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  respondedAt DateTime?
+
+  sender   Profile @relation("SentRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver Profile @relation("ReceivedRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+}
+
+/// Materialized accepted friendship. One row per pair, ordered (userAId < userBId).
+model Friendship {
+  id        String   @id @default(uuid()) @db.Uuid
+  userAId   String   @db.Uuid
+  userBId   String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  @@unique([userAId, userBId])
+}
+
+/// Plant chat history — persisted only if OPEN_QUESTIONS #5 resolves to "persist".
+model ChatMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  plantId     String   @db.Uuid
+  userMessage String
+  aiResponse  String
+  createdAt   DateTime @default(now())
+
+  user  Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plant Plant   @relation(fields: [plantId], references: [id])
+
+  @@index([userId, plantId, createdAt])
+}

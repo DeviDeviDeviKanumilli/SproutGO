@@ -24,10 +24,11 @@ decided, move it to the "Resolved" section with the answer and date.
 | 3 | Leaderboard scope — global, friends-only, or both? | Changes data model + query design | `DATA_MODEL.md`, `API_CONTRACT.md` |
 | 4 | Daily same-species capture quota — exact number? | Diminishing-returns rule needs a concrete cap | `POINTS_AND_RARITY.md` |
 | 5 | Persist plant-chat history in MVP, or session-only? | Adds/removes `ChatMessage` writes | `DATA_MODEL.md`, `AI_INTEGRATION.md` |
-| 6 | Monorepo or two repos for mobile + backend? | Day-one structural decision (leaning monorepo) | `REPO_STRUCTURE.md` |
 | 7 | How is rarity assigned at seed time vs. recomputed from observation frequency later? | Affects points and the rare-marker UI | `POINTS_AND_RARITY.md`, `LIBRARY_SEED.md` |
 | 8 | Coordinate-fuzzing radius for rare/sensitive plants? | Privacy rule needs a concrete distance | `SECURITY_AND_PRIVACY.md` |
 
 ## Resolved
 
-_(none yet — move items here from "Open" with the decision and date.)_
+| # | Question | Decision | Date |
+|---|----------|----------|------|
+| 6 | Monorepo or two repos for mobile + backend? | **Monorepo**, npm workspaces (`apps/*`, `packages/*`) per `REPO_STRUCTURE.md`. Chosen because mobile + backend share types/enums and the Prisma schema. npm (not pnpm) since pnpm/yarn aren't installed in the build env. Scaffolded in M0. | 2026-05-30 |
