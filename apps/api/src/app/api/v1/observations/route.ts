@@ -21,7 +21,8 @@ import {
   firstDiscoveryPoints,
   duplicatePoints,
 } from "@/config/scoring";
-import { getPlantIdentifier } from "@/lib/identify";
+import { getPlantIdentifier, usesRealIdentifier } from "@/lib/identify";
+import { assertObservationImage, createSignedImageUrl } from "@/lib/storage";
 import { snapToGrid, shouldFuzz } from "@/lib/geo";
 import type { ObservationResult, ObservationsMapResponse } from "@sproutgo/shared";
 
@@ -51,9 +52,18 @@ export async function POST(req: Request): Promise<NextResponse> {
       throw errors.forbidden("imagePath must be under your own storage prefix");
     }
 
+    // Before spending an identification, prove the image actually exists, is an image,
+    // and is a sane size (P1 #3 — never mint observations from an arbitrary path). Real
+    // ID runs against a short-lived signed URL; the offline stub (dev/test) skips this.
+    let imageForId = imagePath;
+    if (usesRealIdentifier()) {
+      await assertObservationImage(imagePath);
+      imageForId = await createSignedImageUrl(imagePath);
+    }
+
     // Identify outside the transaction — it may hit the network (OpenAI) and we
     // don't want to hold a DB transaction open across that latency.
-    const idResult = await getPlantIdentifier().identify(imagePath);
+    const idResult = await getPlantIdentifier().identify(imageForId);
 
     const result = await prisma.$transaction(async (tx): Promise<ObservationResult> => {
       // Create the observation up front (PENDING) so every capture is recorded,
