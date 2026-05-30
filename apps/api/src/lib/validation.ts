@@ -26,3 +26,15 @@ export const updateProfileSchema = z
 
 export type CreateProfileInput = z.infer<typeof createProfileSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+// POST /observations — the capture→identify pipeline input (API_CONTRACT §observations).
+// imagePath is a Supabase Storage path; the route additionally enforces that it lives
+// under the caller's own prefix (never trust the client to scope itself).
+export const createObservationSchema = z.object({
+  imagePath: z.string().trim().min(1, "imagePath is required"),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  privacy: z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]).optional(),
+});
+
+export type CreateObservationInput = z.infer<typeof createObservationSchema>;

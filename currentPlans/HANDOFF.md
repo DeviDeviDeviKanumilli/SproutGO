@@ -1,69 +1,76 @@
 # HANDOFF.md
 
 **Last updated:** 2026-05-30
-**Branch:** `main` (nothing committed beyond `d76c3ac`)
+**Branch:** `main` (latest commit pushed to origin)
 
 ## Where the project stands
 
-M0 — Foundation is scaffolded and verified. The capture→AI→PlantDex loop (M1)
-and later milestones (M2–M5) are **not built yet**. See
-`currentPlans/BUILD_MILESTONES.md` for the full sequencing.
+M0 — Foundation is complete. M1 is **in progress**:
+- **Mobile UI shell** (`7ef20be`) — presentational, over mock fixtures
+  (`apps/mobile/src/lib/mockData.ts`).
+- **Backend M1 spine** (this commit) — the real `POST /api/v1/observations`
+  identify→score→PlantDex pipeline + the swappable `PlantIdentifier` interface.
 
-Verified green:
+**Still not wired:** mobile camera capture + Supabase Storage upload, repointing
+the result/PlantDex screens off mock data onto the live endpoint, and the
+`GET /plantdex/me` read. Some M3/M4 screens (forum thread, plant chat) exist as
+UI only. M2 (map richness) and the rest of M3–M5 remain. See
+`currentPlans/BUILD_MILESTONES.md` for full sequencing.
+
+The backend pipeline runs today against a **deterministic stub identifier** (no
+credentials needed); the OpenAI vision adapter activates automatically when
+`OPENAI_API_KEY` is set. Library matching still benefits from a seeded Library
+(`LIBRARY_SEED.md`) — unseeded, the stub auto-creates `OPENAI`-sourced Plant rows.
+
+Verified green (this commit):
 - `npm run typecheck` — passes across all 4 workspaces (shared, db, api, mobile)
 - `npm run test` — 5/5 scoring tests pass (`packages/shared`)
-- `npm run db:generate` — Prisma client generates
 
 External services (Supabase, OpenAI, Mapbox, EAS) are **not provisioned**. Code
 is credential-ready; the user wires `.env` and runs migrations/EAS themselves.
 
-## What changed most recently (uncommitted)
+## What changed most recently (this commit — backend M1 spine)
 
-Reconciled the design tokens with the **Google Stitch** exports (Material 3),
-which are now the authoritative design source over `InitalPlans/design.md`.
+Built the real `POST /api/v1/observations` pipeline and the swappable
+identifier, all credential-ready:
 
-- `apps/mobile/src/theme/index.ts` — repointed to the Stitch M3 ramp. Every
-  key the app already consumes kept its name (typecheck stays green). Added the
-  full surface ramp, `secondary*`, `tertiary`, `outline*`, `inverse*` tokens,
-  line-heights, and a `scientificName` type role for M1–M5 screen work.
-- `currentPlans/DESIGN_SYSTEM.md` — **new.** Living design source of truth:
-  full token ramp, type scale (Plus Jakarta Sans + Inter), spacing/radius,
-  and component patterns (hexagon badge, raised Capture tab, reward sheet).
+- `apps/api/src/lib/identify/` — `PlantIdentifier` interface, a deterministic
+  `StubPlantIdentifier` (no network), an `OpenAIPlantIdentifier` (vision JSON
+  mode, Zod-validated, key read lazily), and a `getPlantIdentifier()` factory
+  that picks OpenAI when `OPENAI_API_KEY` is set else the stub.
+- `apps/api/src/app/api/v1/observations/route.ts` — `POST` pipeline in one
+  `prisma.$transaction`: create observation → identify → match/auto-create
+  Plant (≥0.85 → `OPENAI` source, else `UNCERTAIN`/no unlock) → daily quota →
+  first-discovery vs duplicate points → PlantDexEntry upsert → bump
+  `Profile.totalPoints`. Returns `ObservationResult`.
+- `validation.ts` (`createObservationSchema`) and `serializers.ts`
+  (`serializePlant`, `serializeObservation`). Added the `openai` dependency.
 
-Key token shifts: `primary #2E7D4F → #006c0c`, `bg #FFFFFF → #f5fbee`,
-rarity hexes updated, `gold #D4A017 → #D4AF37`.
+The earlier mobile UI shell (`7ef20be`) remains presentational over mock data.
 
-## Uncommitted git state (as of 2026-05-30)
+## Git state
 
-The entire M0 scaffold is still uncommitted on top of `d76c3ac`:
+M0 (`05f37d6`), the M1 UI shell (`7ef20be`), and this backend-spine commit are
+on `origin/main`. All work has gone straight to `main` (no feature branches).
 
-- Modified: `.gitignore`, `CLAUDE.md`, `currentPlans/OPEN_QUESTIONS.md`
-- New: `apps/`, `packages/`, `.env.example`, `package.json`,
-  `package-lock.json`, `tsconfig.base.json`, `currentPlans/DESIGN_SYSTEM.md`,
-  `currentPlans/HANDOFF.md`
+## Next steps (finish the M1 spine)
 
-Nothing has been committed yet — the user commits when ready.
+The backend pipeline exists; the loop is not yet end-to-end. Remaining:
 
-## Design reference
-
-- **Authoritative:** Google Stitch HTML/Tailwind exports (13 screens) →
-  distilled into `currentPlans/DESIGN_SYSTEM.md`.
-- `InitalPlans/design.md` is the **frozen** baseline; do not edit it. Any
-  correction lives in `currentPlans/`.
-- The 13 screens span M1–M5: Plant Detail, Forum Categories, First Discovery
-  Modal, Library, Feed, Identification Result, AI Processing, Forum Thread,
-  Camera, Plant Chat, PlantDex, Map, Profile.
-
-## Next steps (decision pending)
-
-The theme tokens (M0) are reconciled. The open question put to the user:
-
-1. **Build M1 first** — the capture → AI → reward loop (camera, AI processing,
-   Identification Result + First Discovery modal). Highest-priority milestone.
-2. **Polish M0 screens first** — bring the existing auth / profile / tab-shell
-   screens up to the Stitch design before moving on.
-
-Constraints still in force:
+1. **Mobile camera capture** — replace the simulated `capture.tsx` with
+   `expo-camera` (needs the custom EAS dev build, R1) + a Supabase Storage
+   upload helper that returns `imagePath` under the `<userId>/` prefix.
+2. **Wire the screens** — `processing.tsx` uploads then calls
+   `POST /observations`; `result.tsx` renders the real `ObservationResult`
+   (MATCHED / UNCERTAIN / `quotaReached`) instead of `mockData`.
+3. **`GET /plantdex/me`** — so the unlocked species is actually visible after a
+   capture (the M1 demo criterion); repoint `plantdex.tsx` onto it.
+4. **Tests** — vitest for the stub identifier + the scoring/branch logic
+   (first-discovery, duplicate, UNCERTAIN, quota, auto-create).
+5. **Seed the Library** (`LIBRARY_SEED.md`) — blocked on the OPEN_QUESTIONS
+   seed-scope decision + a live DB; the stub covers the no-data case meanwhile.
+6. **Provision services** (user-owned) — Supabase Storage bucket
+   `observations`, OpenAI key, EAS dev build. Code is credential-ready.
 - Do NOT provision/wire live external services — the user wires credentials.
 - Commit ONLY when explicitly asked.
 - `InitalPlans/` frozen; `currentPlans/` is the living source of truth.
