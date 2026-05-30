@@ -4,6 +4,26 @@
 > Read this, then `currentPlans/`. The four docs in `InitalPlans/` are the **frozen** original
 > vision — read-only; never edit them.
 
+## Latest operational note (2026-05-30)
+
+The live implementation handoff is now `currentPlans/HANDOFF.md`. The repo is no longer
+planning-only. Most recent iOS/Xcode readiness work:
+
+- Pinned `@rnmapbox/maps` from `~10.1.33` to exact `10.1.33` in `apps/mobile/package.json`
+  and `package-lock.json`. The floated `10.1.45` package introduced a React Native 0.74
+  codegen crash in `NativeRNMBXLocationModule` (`onLocationUpdate: EventEmitter<...>`).
+- Cleaned the local, gitignored `apps/mobile/.env` Mapbox download token line so
+  `source .env` works. The replacement Mapbox download token was checked against the iOS
+  binary endpoint and returned HTTP `200`.
+- `npm run prebuild:ios` completed after CocoaPods downloaded Mapbox and cloned
+  `zxingify-objc`; `apps/mobile/ios/SproutGo.xcworkspace` and `Podfile.lock` were generated
+  locally. `apps/mobile/ios/` is ignored and intentionally not committed.
+- Verified `npm run typecheck -w @sproutgo/mobile` and
+  `npm run test -w @sproutgo/mobile` pass.
+
+For current cloud/mobile status, deployment caveats, and next steps, read
+`currentPlans/HANDOFF.md`.
+
 ## What SproutGo is
 
 A social, geotagged plant-discovery mobile app. Core loop: walk around → photograph a plant →
