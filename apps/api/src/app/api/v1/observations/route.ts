@@ -22,6 +22,7 @@ import {
   duplicatePoints,
 } from "@/config/scoring";
 import { getPlantIdentifier } from "@/lib/identify";
+import { snapToGrid, shouldFuzz } from "@/lib/geo";
 import type { ObservationResult, ObservationsMapResponse } from "@sproutgo/shared";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +64,9 @@ export async function POST(req: Request): Promise<NextResponse> {
           imagePath,
           latitude: latitude ?? null,
           longitude: longitude ?? null,
-          privacy: privacy ?? undefined,
+          // Privacy-by-default: never expose an exact capture location the user didn't
+          // explicitly choose to share. They opt into PUBLIC/FRIENDS later when sharing.
+          privacy: privacy ?? Privacy.PRIVATE,
           idStatus: IdStatus.PENDING,
         },
       });
@@ -133,6 +136,20 @@ export async function POST(req: Request): Promise<NextResponse> {
         });
       }
 
+      // Public-facing coordinates for the map: snap sensitive plants (rare/legendary/
+      // invasive) to a coarse grid, pass others through exactly. Stored so the non-owner
+      // bbox query filters on these and can't be probed for the exact point.
+      let publicLatitude: number | null = null;
+      let publicLongitude: number | null = null;
+      if (latitude != null && longitude != null) {
+        ({ latitude: publicLatitude, longitude: publicLongitude } = shouldFuzz(
+          plant.rarity,
+          plant.nativeStatus,
+        )
+          ? snapToGrid(latitude, longitude)
+          : { latitude, longitude });
+      }
+
       const updated = await tx.observation.update({
         where: { id: observation.id },
         data: {
@@ -140,6 +157,8 @@ export async function POST(req: Request): Promise<NextResponse> {
           confidence: idResult.confidence,
           idStatus: IdStatus.MATCHED,
           pointsAwarded,
+          publicLatitude,
+          publicLongitude,
         },
       });
 
@@ -169,9 +188,9 @@ export async function POST(req: Request): Promise<NextResponse> {
 
 // GET /api/v1/observations?bbox=minLng,minLat,maxLng,maxLat — discovery pins for the map.
 // Privacy is enforced entirely in the Prisma `where` (R3: service-role Prisma bypasses
-// RLS, so this is the only guard). Returns own observations at any privacy, others' only
-// if PUBLIC or FRIENDS-with-an-accepted-friendship. Rare-plant coords are fuzzed in the
-// serializer for non-owners.
+// RLS, so this is the only guard). The query is split so the owner sees their own pins by
+// EXACT coordinate, while everyone else's pins are filtered on the PUBLIC (snapped-for-
+// sensitive) columns — otherwise a tiny bbox could probe a rare plant's exact location.
 export async function GET(req: Request): Promise<NextResponse> {
   try {
     const { userId } = await requireAuth(req);
@@ -189,13 +208,28 @@ export async function GET(req: Request): Promise<NextResponse> {
     });
     const friendIds = friendships.map((f) => (f.userAId === userId ? f.userBId : f.userAId));
 
-    const observations = await prisma.observation.findMany({
+    // Own pins: filter on exact coords (the owner is allowed to see their own location).
+    const ownPromise = prisma.observation.findMany({
       where: {
+        userId,
+        plantId: { not: null },
         latitude: { gte: bbox.minLat, lte: bbox.maxLat, not: null },
         longitude: { gte: bbox.minLng, lte: bbox.maxLng, not: null },
+      },
+      include: { plant: true },
+      orderBy: { createdAt: "desc" },
+      take: MAX_MARKERS,
+    });
+
+    // Others' pins: filter on the PUBLIC columns so sensitive markers are only ever
+    // queryable at their snapped grid cell, never their exact point.
+    const othersPromise = prisma.observation.findMany({
+      where: {
+        userId: { not: userId },
         plantId: { not: null },
+        publicLatitude: { gte: bbox.minLat, lte: bbox.maxLat, not: null },
+        publicLongitude: { gte: bbox.minLng, lte: bbox.maxLng, not: null },
         OR: [
-          { userId },
           { privacy: Privacy.PUBLIC },
           { privacy: Privacy.FRIENDS, userId: { in: friendIds } },
         ],
@@ -204,6 +238,11 @@ export async function GET(req: Request): Promise<NextResponse> {
       orderBy: { createdAt: "desc" },
       take: MAX_MARKERS,
     });
+
+    const [own, others] = await Promise.all([ownPromise, othersPromise]);
+    const observations = [...own, ...others]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, MAX_MARKERS);
 
     const body: ObservationsMapResponse = {
       markers: observations.map((o) => serializeObservationMarker(o, userId)),

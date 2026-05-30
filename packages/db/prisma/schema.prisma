@@ -76,6 +76,9 @@ model Profile {
   username    String   @unique
   avatarUrl   String?
   bio         String?
+  // Server-side age attestation (13+ audience). Set at profile creation and enforced by
+  // the API — the client-side signup check is UX only and is bypassable.
+  dateOfBirth DateTime? @db.Date
   totalPoints Int      @default(0)
   isAdmin     Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -126,9 +129,17 @@ model Observation {
   imagePath     String
   latitude      Float?
   longitude     Float?
+  // Public-facing coordinates: for sensitive plants (rare/legendary/invasive) these are
+  // snapped to a coarse grid at write time; otherwise they equal the exact coords. The
+  // map bbox query filters NON-owner markers on THESE columns so a tiny bbox can't probe
+  // a rare plant's exact point (SECURITY_AND_PRIVACY §location). Null until a plant is
+  // matched (UNCERTAIN captures never reach the map).
+  publicLatitude  Float?
+  publicLongitude Float?
   confidence    Float?
   idStatus      IdStatus @default(PENDING)
-  privacy       Privacy  @default(PUBLIC)
+  // Privacy-by-default: geotagged captures must not silently expose home/work locations.
+  privacy       Privacy  @default(PRIVATE)
   pointsAwarded Int      @default(0)
   createdAt     DateTime @default(now())
 
@@ -140,6 +151,7 @@ model Observation {
   @@index([userId])
   @@index([plantId])
   @@index([latitude, longitude])
+  @@index([publicLatitude, publicLongitude])
   @@index([createdAt])
 }
 

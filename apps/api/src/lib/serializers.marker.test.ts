@@ -82,6 +82,49 @@ describe("serializeObservationMarker", () => {
     expect(marker.longitude).toBe(LNG);
   });
 
+  it("non-owner uses the STORED public coords (not a re-snap of exact)", () => {
+    // Sentinel public coords distinct from snapToGrid(exact) prove we read the stored
+    // columns rather than recomputing — this is what closes the bbox-probe hole.
+    const row = observation({
+      userId: OWNER,
+      plant: plant({ rarity: "RARE" }),
+      publicLatitude: 1.23,
+      publicLongitude: 4.56,
+    });
+    const marker = serializeObservationMarker(row as never, VIEWER);
+    expect(marker.isOwn).toBe(false);
+    expect(marker.fuzzed).toBe(true);
+    expect(marker.latitude).toBe(1.23);
+    expect(marker.longitude).toBe(4.56);
+  });
+
+  it("owner ignores public coords and still sees exact", () => {
+    const row = observation({
+      userId: OWNER,
+      plant: plant({ rarity: "RARE" }),
+      publicLatitude: 1.23,
+      publicLongitude: 4.56,
+    });
+    const marker = serializeObservationMarker(row as never, OWNER);
+    expect(marker.isOwn).toBe(true);
+    expect(marker.fuzzed).toBe(false);
+    expect(marker.latitude).toBe(LAT);
+    expect(marker.longitude).toBe(LNG);
+  });
+
+  it("non-owner of a COMMON plant with public==exact coords is not marked fuzzed", () => {
+    const row = observation({
+      userId: OWNER,
+      plant: plant({ rarity: "COMMON" }),
+      publicLatitude: LAT,
+      publicLongitude: LNG,
+    });
+    const marker = serializeObservationMarker(row as never, VIEWER);
+    expect(marker.fuzzed).toBe(false);
+    expect(marker.latitude).toBe(LAT);
+    expect(marker.longitude).toBe(LNG);
+  });
+
   it("embeds the right plant subset and mirrors plant.rarity", () => {
     const row = observation({ plant: plant({ rarity: "LEGENDARY" }) });
     const marker = serializeObservationMarker(row as never, OWNER);

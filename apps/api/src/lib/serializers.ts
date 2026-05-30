@@ -89,22 +89,41 @@ export function serializePlantDexEntry(
   };
 }
 
-// A map pin for GET /observations?bbox=. The viewer's own observations always carry
-// exact coordinates; for everyone else, rare/sensitive plant coords are snapped to a
-// grid before they leave the backend (R3: fuzzing must happen server-side). Rows are
-// pre-filtered to have non-null lat/long and a linked plant.
+// A map pin for GET /observations?bbox=. The viewer's own observations carry exact
+// coordinates; for everyone else we emit the PUBLIC coordinates persisted at write time
+// (snapped to a grid for rare/sensitive plants, exact otherwise). Because the GET query
+// already filters non-owner rows on those public columns, a tiny bbox can never recover a
+// rare plant's exact point (R3: fuzzing is server-side). Rows are pre-filtered to have a
+// linked plant and the relevant non-null coordinates.
 export function serializeObservationMarker(
   row: ObservationRow & { plant: PlantRow | null },
   viewerId: string,
 ): ObservationMarker {
   const isOwn = row.userId === viewerId;
   const rarity = row.plant?.rarity ?? null;
-  const fuzz = !isOwn && shouldFuzz(rarity, row.plant?.nativeStatus ?? null);
+  const sensitive = shouldFuzz(rarity, row.plant?.nativeStatus ?? null);
 
-  let latitude = row.latitude as number;
-  let longitude = row.longitude as number;
-  if (fuzz) {
-    ({ latitude, longitude } = snapToGrid(latitude, longitude));
+  let latitude: number;
+  let longitude: number;
+  let fuzzed = false;
+
+  if (isOwn) {
+    // Owner always sees their own exact location.
+    latitude = row.latitude as number;
+    longitude = row.longitude as number;
+  } else if (row.publicLatitude != null && row.publicLongitude != null) {
+    // Non-owner: the persisted public coordinate is already exact-or-snapped.
+    latitude = row.publicLatitude;
+    longitude = row.publicLongitude;
+    fuzzed = sensitive;
+  } else {
+    // Legacy rows written before publicLatitude existed — snap on the fly as a fallback.
+    latitude = row.latitude as number;
+    longitude = row.longitude as number;
+    if (sensitive) {
+      ({ latitude, longitude } = snapToGrid(latitude, longitude));
+      fuzzed = true;
+    }
   }
 
   return {
@@ -114,7 +133,7 @@ export function serializeObservationMarker(
     longitude,
     rarity,
     isOwn,
-    fuzzed: fuzz,
+    fuzzed,
     plant: row.plant
       ? {
           id: row.plant.id,
