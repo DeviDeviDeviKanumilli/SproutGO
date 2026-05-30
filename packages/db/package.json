@@ -10,6 +10,8 @@
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
     "seed": "tsx seed/seed.ts",
+    "seed:scrape": "tsx seed/scrape.ts",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "prisma": {
@@ -19,8 +21,10 @@
     "@prisma/client": "^5.22.0"
   },
   "devDependencies": {
+    "csv-parse": "^5.5.6",
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
   }
 }

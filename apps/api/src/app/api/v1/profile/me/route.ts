@@ -4,29 +4,14 @@
 
 import { NextResponse } from "next/server";
 import { Prisma } from "@sproutgo/db";
-import type { ProfileStats } from "@sproutgo/shared";
-import { Rarity } from "@sproutgo/shared";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { errors, errorResponse } from "@/lib/errors";
 import { updateProfileSchema } from "@/lib/validation";
 import { serializeProfile, serializeProfileWithStats } from "@/lib/serializers";
+import { computeProfileStats } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
-
-async function computeStats(userId: string, totalPoints: number): Promise<ProfileStats> {
-  const [speciesDiscovered, photosSubmitted, rareFound, librarySize] = await Promise.all([
-    prisma.plantDexEntry.count({ where: { userId } }),
-    prisma.observation.count({ where: { userId } }),
-    prisma.plantDexEntry.count({
-      where: { userId, plant: { rarity: { in: [Rarity.RARE, Rarity.LEGENDARY] } } },
-    }),
-    prisma.plant.count(),
-  ]);
-  const completionPct =
-    librarySize > 0 ? Math.round((speciesDiscovered / librarySize) * 1000) / 10 : 0;
-  return { speciesDiscovered, photosSubmitted, rareFound, totalPoints, completionPct };
-}
 
 export async function GET(req: Request): Promise<NextResponse> {
   try {
@@ -35,7 +20,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     if (!profile) {
       throw errors.notFound("Profile not found");
     }
-    const stats = await computeStats(userId, profile.totalPoints);
+    const stats = await computeProfileStats(userId, profile.totalPoints);
     return NextResponse.json(serializeProfileWithStats(profile, stats));
   } catch (err) {
     return errorResponse(err);

@@ -1,22 +1,31 @@
-// PlantDex tab — collection progress + hexagon badge grid (Stitch "PlantDex Screen").
-// "My PlantDex" fetches the user's discovered species from GET /plantdex/me (server
-// returns only unlocked entries; rarity filters narrow them). "Library" (design §7.2)
-// shows the full encyclopedia from local fixtures.
-import { useCallback, useState } from "react";
+// PlantDex tab — collection progress + hexagon badge grid (design §8.9) and the Library
+// encyclopedia (design §8.10). Both are wired to the backend:
+//   - "My PlantDex" renders the FULL Library catalog from GET /plantdex/me: discovered
+//     species are unlocked badges, the rest are locked silhouettes (curiosity, not clutter).
+//   - "Library" browses GET /library with server-side search, facet filters, and sort; the
+//     discovered checkmark comes from the same /plantdex/me entries.
+import { useCallback, useEffect, useState } from "react";
 import { ScrollView, View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
-import type { PlantDexResponse, Rarity } from "@sproutgo/shared";
+import type {
+  CatalogPlant,
+  LibraryResponse,
+  PlantDexResponse,
+  Rarity,
+  NativeStatus,
+  PlantType,
+} from "@sproutgo/shared";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
-import { AppHeader, Chip, RarityBadge } from "@/components/ui";
+import { AppHeader, Chip } from "@/components/ui";
 import { HexBadge } from "@/components/HexBadge";
 import { api, ApiClientError } from "@/lib/api";
-import { plants, rarityLabel } from "@/lib/mockData";
+import { rarityLabel } from "@/lib/mockData";
 
 const MODES = ["My PlantDex", "Library"] as const;
 
-const FILTERS: { key: string; label: string }[] = [
+const RARITY_FILTERS: { key: "all" | Rarity; label: string }[] = [
   { key: "all", label: "All" },
   { key: "COMMON", label: "Common" },
   { key: "UNCOMMON", label: "Uncommon" },
@@ -27,7 +36,8 @@ const FILTERS: { key: string; label: string }[] = [
 export default function PlantDexScreen() {
   const router = useRouter();
   const [mode, setMode] = useState<(typeof MODES)[number]>("My PlantDex");
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<"all" | Rarity>("all");
+  const [query, setQuery] = useState("");
   const [data, setData] = useState<PlantDexResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +67,20 @@ export default function PlantDexScreen() {
   useFocusEffect(load);
 
   const entries = data?.entries ?? [];
-  const visible = entries.filter((e) => filter === "all" || e.plant.rarity === (filter as Rarity));
+  const catalog = data?.catalog ?? [];
   const stats = data?.stats;
+  const discoveredIds = new Set(entries.map((e) => e.plantId));
+
+  // The grid shows the whole Library; discovered species unlock, the rest stay locked.
+  const q = query.trim().toLowerCase();
+  const visible = catalog.filter((p) => {
+    if (filter !== "all" && p.rarity !== filter) return false;
+    if (!q) return true;
+    return (
+      (p.commonName ?? "").toLowerCase().includes(q) ||
+      p.scientificName.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -80,114 +102,202 @@ export default function PlantDexScreen() {
       </View>
 
       {mode === "Library" ? (
-        <LibraryView router={router} />
+        <LibraryView router={router} discoveredIds={discoveredIds} />
       ) : (
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <Text style={typography.largeTitle}>PlantDex</Text>
-          <Text style={[typography.body, { marginBottom: spacing.md }]}>
-            {stats ? `${stats.speciesDiscovered} species discovered` : "Your collection"}
-          </Text>
-          <View style={styles.track}>
-            <View style={[styles.fill, { width: `${stats?.completionPct ?? 0}%` }]} />
-          </View>
-          {stats ? (
-            <View style={styles.statChips}>
-              <View style={styles.statChip}>
-                <Icon name="emoji-events" size={15} color={colors.secondary} />
-                <Text style={styles.statChipText}>{stats.totalPoints} pts</Text>
-              </View>
-              <View style={styles.statChip}>
-                <Icon name="auto-awesome" size={15} color={colors.secondary} />
-                <Text style={styles.statChipText}>{stats.rareFound} rare</Text>
-              </View>
-              <View style={styles.statChip}>
-                <Icon name="photo-camera" size={15} color={colors.secondary} />
-                <Text style={styles.statChipText}>{stats.photosSubmitted} photos</Text>
-              </View>
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.searchRow}>
-          <Icon name="search" size={20} color={colors.textMuted} />
-          <TextInput
-            placeholder="Search your collection..."
-            placeholderTextColor={colors.textMuted}
-            style={styles.searchInput}
-          />
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-        >
-          {FILTERS.map((f) => (
-            <Chip
-              key={f.key}
-              label={f.label}
-              active={filter === f.key}
-              onPress={() => setFilter(f.key)}
-            />
-          ))}
-        </ScrollView>
-
-        {loading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
-        ) : error ? (
-          <View style={styles.notice}>
-            <Icon name="cloud-off" size={32} color={colors.textMuted} />
-            <Text style={styles.noticeText}>{error}</Text>
-            <Pressable style={styles.retryBtn} onPress={load}>
-              <Text style={styles.retryText}>Retry</Text>
-            </Pressable>
-          </View>
-        ) : visible.length === 0 ? (
-          <View style={styles.notice}>
-            <Icon name="local-florist" size={32} color={colors.textMuted} />
-            <Text style={styles.noticeText}>
-              {entries.length === 0
-                ? "No discoveries yet. Snap a plant to start your PlantDex!"
-                : "No species match this filter."}
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.hero}>
+            <Text style={typography.largeTitle}>PlantDex</Text>
+            <Text style={[typography.body, { marginBottom: spacing.md }]}>
+              {stats ? `${stats.speciesDiscovered} species discovered` : "Your collection"}
             </Text>
+            <View style={styles.track}>
+              <View style={[styles.fill, { width: `${stats?.completionPct ?? 0}%` }]} />
+            </View>
+            {stats ? (
+              <View style={styles.statChips}>
+                <View style={styles.statChip}>
+                  <Icon name="emoji-events" size={15} color={colors.secondary} />
+                  <Text style={styles.statChipText}>{stats.totalPoints} pts</Text>
+                </View>
+                <View style={styles.statChip}>
+                  <Icon name="auto-awesome" size={15} color={colors.secondary} />
+                  <Text style={styles.statChipText}>{stats.rareFound} rare</Text>
+                </View>
+                <View style={styles.statChip}>
+                  <Icon name="photo-camera" size={15} color={colors.secondary} />
+                  <Text style={styles.statChipText}>{stats.photosSubmitted} photos</Text>
+                </View>
+              </View>
+            ) : null}
           </View>
-        ) : (
-          <View style={styles.grid}>
-            {visible.map((e) => (
-              <Pressable
-                key={e.id}
-                style={styles.cell}
-                onPress={() => router.push(`/plant/${e.plant.id}`)}
-              >
-                <HexBadge imageUrl={e.plant.imageUrl} rarity={e.plant.rarity} />
-                <Text style={styles.cellName} numberOfLines={1}>
-                  {e.plant.commonName ?? e.plant.scientificName}
-                </Text>
-                <Text style={styles.cellSci} numberOfLines={1}>
-                  {e.plant.scientificName}
-                </Text>
-              </Pressable>
+
+          <View style={styles.searchRow}>
+            <Icon name="search" size={20} color={colors.textMuted} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search the PlantDex..."
+              placeholderTextColor={colors.textMuted}
+              style={styles.searchInput}
+            />
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {RARITY_FILTERS.map((f) => (
+              <Chip
+                key={f.key}
+                label={f.label}
+                active={filter === f.key}
+                onPress={() => setFilter(f.key)}
+              />
             ))}
-          </View>
-        )}
-      </ScrollView>
+          </ScrollView>
+
+          {loading ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+          ) : error ? (
+            <View style={styles.notice}>
+              <Icon name="cloud-off" size={32} color={colors.textMuted} />
+              <Text style={styles.noticeText}>{error}</Text>
+              <Pressable style={styles.retryBtn} onPress={load}>
+                <Text style={styles.retryText}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : catalog.length === 0 ? (
+            <View style={styles.notice}>
+              <Icon name="local-florist" size={32} color={colors.textMuted} />
+              <Text style={styles.noticeText}>
+                The Library is still being seeded. Check back soon!
+              </Text>
+            </View>
+          ) : visible.length === 0 ? (
+            <View style={styles.notice}>
+              <Icon name="local-florist" size={32} color={colors.textMuted} />
+              <Text style={styles.noticeText}>No species match this filter.</Text>
+            </View>
+          ) : (
+            <View style={styles.grid}>
+              {visible.map((p) => {
+                const discovered = discoveredIds.has(p.id);
+                return (
+                  <Pressable
+                    key={p.id}
+                    style={styles.cell}
+                    onPress={() => router.push(`/plant/${p.id}`)}
+                  >
+                    <HexBadge
+                      imageUrl={discovered ? p.imageUrl : null}
+                      rarity={p.rarity}
+                      locked={!discovered}
+                    />
+                    <Text
+                      style={[styles.cellName, !discovered && styles.lockedText]}
+                      numberOfLines={1}
+                    >
+                      {p.commonName ?? p.scientificName}
+                    </Text>
+                    <Text style={styles.cellSci} numberOfLines={1}>
+                      {discovered ? p.scientificName : "Undiscovered"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
       )}
     </SafeAreaView>
   );
 }
 
-// Library view (design §8.10) — the full encyclopedia: searchable list with type +
-// native-status badges and a discovered indicator. Shares mockData with the PlantDex.
-function LibraryView({ router }: { router: ReturnType<typeof useRouter> }) {
-  const [query, setQuery] = useState("");
-  const list = plants.filter(
-    (p) =>
-      p.commonName.toLowerCase().includes(query.toLowerCase()) ||
-      p.scientificName.toLowerCase().includes(query.toLowerCase()),
-  );
+const TYPE_FILTERS: { key: "all" | PlantType; label: string }[] = [
+  { key: "all", label: "All Types" },
+  { key: "TREE", label: "Tree" },
+  { key: "FLOWER", label: "Flower" },
+  { key: "SHRUB", label: "Shrub" },
+  { key: "FERN", label: "Fern" },
+  { key: "GRASS", label: "Grass" },
+  { key: "OTHER", label: "Other" },
+];
 
-  const discovered = plants.filter((p) => p.discovered).length;
+const NATIVE_FILTERS: { key: "all" | NativeStatus; label: string }[] = [
+  { key: "all", label: "All Status" },
+  { key: "NATIVE", label: "Native" },
+  { key: "INTRODUCED", label: "Introduced" },
+  { key: "INVASIVE", label: "Invasive" },
+  { key: "UNKNOWN", label: "Unknown" },
+];
+
+const SORTS = ["name", "rarity", "recent"] as const;
+const SORT_LABEL: Record<(typeof SORTS)[number], string> = {
+  name: "A–Z",
+  rarity: "Rarity",
+  recent: "Recent",
+};
+
+// Library view (design §8.10) — the full encyclopedia from GET /library, with server-side
+// search, faceted filters (rarity / type / native), and sort. The discovered checkmark comes
+// from the caller's PlantDex entries (passed down) so a species shows as found in both places.
+function LibraryView({
+  router,
+  discoveredIds,
+}: {
+  router: ReturnType<typeof useRouter>;
+  discoveredIds: Set<string>;
+}) {
+  const [query, setQuery] = useState("");
+  const [rarity, setRarity] = useState<"all" | Rarity>("all");
+  const [type, setType] = useState<"all" | PlantType>("all");
+  const [native, setNative] = useState<"all" | NativeStatus>("all");
+  const [sort, setSort] = useState<(typeof SORTS)[number]>("name");
+
+  const [resp, setResp] = useState<LibraryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Debounce the search box so each keystroke doesn't fire a request.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const load = useCallback(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams({ sort, limit: "100" });
+    if (debouncedQuery) params.set("q", debouncedQuery);
+    if (rarity !== "all") params.set("rarity", rarity);
+    if (type !== "all") params.set("type", type);
+    if (native !== "all") params.set("native", native);
+    api
+      .get<LibraryResponse>(`/library?${params.toString()}`)
+      .then((res) => {
+        if (!cancelled) setResp(res);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof ApiClientError ? e.message : "Could not load the Library.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery, rarity, type, native, sort]);
+
+  useEffect(load, [load]);
+
+  const list = resp?.plants ?? [];
+  const cycleSort = () =>
+    setSort((s) => SORTS[(SORTS.indexOf(s) + 1) % SORTS.length] as (typeof SORTS)[number]);
 
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -196,77 +306,101 @@ function LibraryView({ router }: { router: ReturnType<typeof useRouter> }) {
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Search the PlantDex..."
+          placeholder="Search the Library..."
           placeholderTextColor={colors.textMuted}
           style={styles.searchInput}
         />
       </View>
 
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+        {RARITY_FILTERS.map((f) => (
+          <Chip key={f.key} label={f.label} active={rarity === f.key} onPress={() => setRarity(f.key)} />
+        ))}
+      </ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+        {TYPE_FILTERS.map((f) => (
+          <Chip key={f.key} label={f.label} active={type === f.key} onPress={() => setType(f.key)} />
+        ))}
+      </ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+        {NATIVE_FILTERS.map((f) => (
+          <Chip key={f.key} label={f.label} active={native === f.key} onPress={() => setNative(f.key)} />
+        ))}
+      </ScrollView>
+
       <View style={styles.libHeader}>
         <View>
           <Text style={typography.sectionTitle}>Full Collection</Text>
           <Text style={typography.caption}>
-            {discovered} of {plants.length} Discovered
+            {resp ? `${list.length} of ${resp.total} shown` : "Loading…"}
           </Text>
         </View>
-        <View style={styles.sortBtn}>
-          <Text style={styles.sortText}>Sort: A–Z</Text>
-          <Icon name="expand-more" size={16} color={colors.primary} />
-        </View>
+        <Pressable style={styles.sortBtn} onPress={cycleSort}>
+          <Text style={styles.sortText}>Sort: {SORT_LABEL[sort]}</Text>
+          <Icon name="swap-vert" size={16} color={colors.primary} />
+        </Pressable>
       </View>
 
-      <View style={styles.libGrid}>
-        {list.map((p) => (
-          <Pressable
-            key={p.id}
-            style={[styles.libCard, !p.discovered && styles.libCardLocked]}
-            onPress={() => router.push(`/plant/${p.id}`)}
-          >
-            <View style={styles.libCardImgWrap}>
-              {p.discovered && p.imageUrl ? (
-                <Image source={{ uri: p.imageUrl }} style={styles.libCardImg} />
-              ) : (
-                <View style={styles.libCardSilhouette}>
-                  <Icon name="local-florist" size={56} color={colors.outlineVariant} />
-                </View>
-              )}
-              <View style={[styles.libRarityPill, { backgroundColor: colors.rarity[p.rarity] }]}>
-                <Text style={styles.libRarityText}>{rarityLabel[p.rarity]}</Text>
-              </View>
-              <View style={styles.libStatus}>
-                <Icon
-                  name={p.discovered ? "check-circle" : "lock"}
-                  size={18}
-                  color={p.discovered ? colors.primary : colors.outlineVariant}
-                />
-              </View>
-            </View>
-            <View style={styles.libCardBody}>
-              <Text style={[typography.body, { fontWeight: "600" }]} numberOfLines={1}>
-                {p.commonName}
-              </Text>
-              <Text style={typography.scientificName} numberOfLines={1}>
-                {p.scientificName}
-              </Text>
-              <View style={styles.libCardFoot}>
-                {p.discovered ? (
-                  <>
-                    <Icon name="location-on" size={13} color={colors.outline} />
-                    <Text style={styles.libFootText} numberOfLines={1}>
-                      {p.location ?? "Discovered"}
-                    </Text>
-                  </>
-                ) : (
-                  <Text style={styles.libFootText}>Undiscovered</Text>
-                )}
-              </View>
-            </View>
+      {loading ? (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+      ) : error ? (
+        <View style={styles.notice}>
+          <Icon name="cloud-off" size={32} color={colors.textMuted} />
+          <Text style={styles.noticeText}>{error}</Text>
+          <Pressable style={styles.retryBtn} onPress={load}>
+            <Text style={styles.retryText}>Retry</Text>
           </Pressable>
-        ))}
-      </View>
-      {list.length === 0 ? (
+        </View>
+      ) : list.length === 0 ? (
         <Text style={styles.libEmpty}>No plants found. Try a common name or type.</Text>
-      ) : null}
+      ) : (
+        <View style={styles.libGrid}>
+          {list.map((p) => {
+            const discovered = discoveredIds.has(p.id);
+            return (
+              <Pressable
+                key={p.id}
+                style={[styles.libCard, !discovered && styles.libCardLocked]}
+                onPress={() => router.push(`/plant/${p.id}`)}
+              >
+                <View style={styles.libCardImgWrap}>
+                  {p.imageUrl ? (
+                    <Image source={{ uri: p.imageUrl }} style={styles.libCardImg} />
+                  ) : (
+                    <View style={styles.libCardSilhouette}>
+                      <Icon name="local-florist" size={56} color={colors.outlineVariant} />
+                    </View>
+                  )}
+                  <View style={[styles.libRarityPill, { backgroundColor: colors.rarity[p.rarity] }]}>
+                    <Text style={styles.libRarityText}>{rarityLabel[p.rarity]}</Text>
+                  </View>
+                  <View style={styles.libStatus}>
+                    <Icon
+                      name={discovered ? "check-circle" : "lock"}
+                      size={18}
+                      color={discovered ? colors.primary : colors.outlineVariant}
+                    />
+                  </View>
+                </View>
+                <View style={styles.libCardBody}>
+                  <Text style={[typography.body, { fontWeight: "600" }]} numberOfLines={1}>
+                    {p.commonName ?? p.scientificName}
+                  </Text>
+                  <Text style={typography.scientificName} numberOfLines={1}>
+                    {p.scientificName}
+                  </Text>
+                  <View style={styles.libCardFoot}>
+                    <Icon name="public" size={13} color={colors.outline} />
+                    <Text style={styles.libFootText} numberOfLines={1}>
+                      {p.nativeStatus}
+                    </Text>
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -290,7 +424,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
-    marginTop: spacing.lg,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
   sortBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
@@ -373,11 +507,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   searchInput: { flex: 1, ...typography.body, paddingVertical: 0 },
-  filterRow: { gap: spacing.sm, paddingBottom: spacing.lg, paddingRight: spacing.lg },
+  filterRow: { gap: spacing.sm, paddingBottom: spacing.sm, paddingRight: spacing.lg },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing.lg },
   cell: { width: "47%", alignItems: "center" },
   cellName: { ...typography.caption, fontWeight: "600", color: colors.text, marginTop: spacing.sm },
   cellSci: { ...typography.scientificName, textAlign: "center" },
+  lockedText: { color: colors.textMuted },
   notice: { alignItems: "center", gap: spacing.md, paddingVertical: spacing.xxl, paddingHorizontal: spacing.lg },
   noticeText: { ...typography.body, color: colors.textMuted, textAlign: "center" },
   retryBtn: {

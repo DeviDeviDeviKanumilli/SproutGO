@@ -67,6 +67,40 @@ export const updateObservationSchema = z.object({
 
 export type UpdateObservationInput = z.infer<typeof updateObservationSchema>;
 
+// GET /library?q=&type=&rarity=&native=&sort=&limit=&offset= — Library catalog browse.
+// Faceted filters map to the Plant B-tree indexes; `q` is a case-insensitive name match
+// (no FTS for MVP — see LIBRARY_SEED.md). All params optional; parse before validating.
+export const LIBRARY_PAGE_DEFAULT = 30;
+export const LIBRARY_PAGE_MAX = 100;
+
+export const librarySortSchema = z.enum(["name", "rarity", "recent"]);
+export type LibrarySort = z.infer<typeof librarySortSchema>;
+
+export const libraryQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  type: z.enum(["TREE", "FLOWER", "SHRUB", "FERN", "GRASS", "OTHER"]).optional(),
+  rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "LEGENDARY"]).optional(),
+  native: z.enum(["NATIVE", "INTRODUCED", "INVASIVE", "UNKNOWN"]).optional(),
+  sort: librarySortSchema.default("name"),
+  limit: z.coerce.number().int().min(1).max(LIBRARY_PAGE_MAX).default(LIBRARY_PAGE_DEFAULT),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export type LibraryQueryInput = z.infer<typeof libraryQuerySchema>;
+
+// Parse the URLSearchParams of GET /library into a validated query. Unknown/blank params are
+// dropped (treated as absent) so a bare `?type=` doesn't fail the enum. Returns null on any
+// invalid value so the route can 400.
+export function parseLibraryQuery(params: URLSearchParams): LibraryQueryInput | null {
+  const raw: Record<string, string> = {};
+  for (const key of ["q", "type", "rarity", "native", "sort", "limit", "offset"] as const) {
+    const v = params.get(key);
+    if (v != null && v.trim() !== "") raw[key] = v.trim();
+  }
+  const parsed = libraryQuerySchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 // GET /observations?bbox=minLng,minLat,maxLng,maxLat — map bounding-box query.
 // Parse the CSV string into this shape before validating.
 export const bboxSchema = z

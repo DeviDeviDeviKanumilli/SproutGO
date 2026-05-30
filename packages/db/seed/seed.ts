@@ -1,19 +1,41 @@
-// Library seed entry point.
-// M0 placeholder — the full USDA → Plant + Wikimedia image pipeline is built in M1
-// (see currentPlans/LIBRARY_SEED.md). This keeps `npm run db:seed` wired and the
-// script reproducible. The real implementation:
-//   1. Load USDA CSV → parse rows.        4. Resolve one Wikimedia image+license/species.
-//   2. Filter to region species list.     5. Assign rarity via heuristic.
-//   3. Normalize names; collapse synonyms. 6. prisma.plant.createMany({ skipDuplicates }).
+// Phase B — `npm run db:seed` (offline, idempotent). Reads the committed normalized Library
+// dataset and inserts it with createMany({ skipDuplicates }), deduped on the unique
+// scientificName. No network: all data comes from seed/plants.normalized.json (produced by the
+// maintainer-only seed:scrape). Re-running inserts nothing new. See LIBRARY_SEED.md.
 
-import { prisma } from "../src/index";
+import { readFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { prisma, Prisma } from "../src/index";
+import type { NormalizedSeedFile } from "./lib/types";
+import { assertValidSeedFile, toPlantCreateInput } from "./lib/loader";
+
+const OUT_JSON = fileURLToPath(new URL("./plants.normalized.json", import.meta.url));
+
+function loadSeedFile(): NormalizedSeedFile {
+  if (!existsSync(OUT_JSON)) {
+    throw new Error(
+      `Missing ${OUT_JSON}. Run \`npm run db:seed:scrape\` to generate it (network), ` +
+        `or commit a normalized dataset. See LIBRARY_SEED.md.`,
+    );
+  }
+  const file = JSON.parse(readFileSync(OUT_JSON, "utf8")) as NormalizedSeedFile;
+  assertValidSeedFile(file);
+  return file;
+}
 
 async function main(): Promise<void> {
-  console.log("[seed] M0 placeholder — no Library data inserted yet.");
-  console.log("[seed] Implement the USDA/Wikimedia pipeline in M1 (LIBRARY_SEED.md).");
-  // Smoke-check connectivity without writing rows.
-  const count = await prisma.plant.count();
-  console.log(`[seed] Library currently has ${count} plant(s).`);
+  const file = loadSeedFile();
+  console.log(`[seed] loading ${file.plants.length} species (generated ${file.generatedAt})`);
+
+  const data: Prisma.PlantCreateManyInput[] = file.plants.map(toPlantCreateInput);
+
+  const result = await prisma.plant.createMany({ data, skipDuplicates: true });
+  const total = await prisma.plant.count();
+  const withImage = await prisma.plant.count({ where: { imageUrl: { not: null } } });
+  console.log(
+    `[seed] inserted=${result.count} (skipped ${file.plants.length - result.count} existing); ` +
+      `Library now has ${total} plant(s), ${withImage} with images.`,
+  );
 }
 
 main()

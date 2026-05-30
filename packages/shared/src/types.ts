@@ -54,6 +54,10 @@ export interface Plant {
   nativeStatus: NativeStatus;
   rarity: Rarity;
   imageUrl: string | null;
+  // Attribution for seeded Commons images (CC licensing); null for AI-created/image-less rows.
+  imageLicense: string | null;
+  imageAttribution: string | null;
+  imageSourceUrl: string | null;
   source: IdSource;
   confidence: number | null;
   createdAt: string;
@@ -119,10 +123,38 @@ export interface PlantDexEntry {
   plant: Plant;
 }
 
-// GET /plantdex/me response (API_CONTRACT §plantdex).
+// A lean catalog entry — every Library species, used to render locked/discovered states in
+// the PlantDex grid (design §8.9) without fetching the full Plant for each.
+export interface CatalogPlant {
+  id: string;
+  commonName: string | null;
+  scientificName: string;
+  rarity: Rarity;
+  imageUrl: string | null;
+}
+
+// GET /plantdex/me response (API_CONTRACT §plantdex). `catalog` is the full Library so the
+// grid can show locked silhouettes for undiscovered species in one fetch.
 export interface PlantDexResponse {
   entries: PlantDexEntry[];
   stats: ProfileStats;
+  catalog: CatalogPlant[];
+}
+
+// GET /library response (API_CONTRACT §plantdex/library). Offset-paginated.
+export interface LibraryResponse {
+  plants: Plant[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// GET /library/:plantId response — the Plant Detail screen (design §8.11). Community photos
+// and map sightings are observation markers (rare-plant coords already server-fuzzed).
+export interface PlantDetailResponse {
+  plant: Plant;
+  communityPhotos: ObservationMarker[];
+  sightings: ObservationMarker[];
 }
 
 // --- Request bodies --------------------------------------------------------

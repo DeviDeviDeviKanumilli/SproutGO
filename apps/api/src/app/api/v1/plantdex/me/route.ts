@@ -1,51 +1,50 @@
-// GET /api/v1/plantdex/me → the caller's discovered species + collection stats
-// (API_CONTRACT §plantdex). Powers the PlantDex tab grid. Scoped to the authenticated
-// userId; each entry embeds its resolved Plant so the badge grid renders in one fetch.
+// GET /api/v1/plantdex/me → the caller's discovered species + collection stats + the full
+// Library catalog (API_CONTRACT §plantdex). Powers the PlantDex tab grid: `entries` are the
+// discovered species (each embeds its resolved Plant), and `catalog` is every Library species
+// (lean shape) so the grid can render locked silhouettes for the undiscovered ones (design
+// §8.9) in a single fetch.
 
 import { NextResponse } from "next/server";
-import type { ProfileStats } from "@sproutgo/shared";
-import { Rarity } from "@sproutgo/shared";
+import type { CatalogPlant, PlantDexResponse } from "@sproutgo/shared";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
-import { errorResponse } from "@/lib/errors";
+import { errors, errorResponse } from "@/lib/errors";
 import { serializePlantDexEntry } from "@/lib/serializers";
+import { computeProfileStats } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
-
-async function computeStats(userId: string): Promise<ProfileStats> {
-  const [profile, speciesDiscovered, photosSubmitted, rareFound, librarySize] =
-    await Promise.all([
-      prisma.profile.findUnique({ where: { id: userId }, select: { totalPoints: true } }),
-      prisma.plantDexEntry.count({ where: { userId } }),
-      prisma.observation.count({ where: { userId } }),
-      prisma.plantDexEntry.count({
-        where: { userId, plant: { rarity: { in: [Rarity.RARE, Rarity.LEGENDARY] } } },
-      }),
-      prisma.plant.count(),
-    ]);
-  const completionPct =
-    librarySize > 0 ? Math.round((speciesDiscovered / librarySize) * 1000) / 10 : 0;
-  return {
-    speciesDiscovered,
-    photosSubmitted,
-    rareFound,
-    totalPoints: profile?.totalPoints ?? 0,
-    completionPct,
-  };
-}
 
 export async function GET(req: Request): Promise<NextResponse> {
   try {
     const { userId } = await requireAuth(req);
-    const [rows, stats] = await Promise.all([
+    const profile = await prisma.profile.findUnique({
+      where: { id: userId },
+      select: { totalPoints: true },
+    });
+    if (!profile) {
+      throw errors.notFound("Profile not found");
+    }
+
+    const [rows, stats, catalogRows] = await Promise.all([
       prisma.plantDexEntry.findMany({
         where: { userId },
         include: { plant: true },
         orderBy: { firstDiscoveredAt: "desc" },
       }),
-      computeStats(userId),
+      computeProfileStats(userId, profile.totalPoints),
+      prisma.plant.findMany({
+        select: { id: true, commonName: true, scientificName: true, rarity: true, imageUrl: true },
+        orderBy: { commonName: "asc" },
+      }),
     ]);
-    return NextResponse.json({ entries: rows.map(serializePlantDexEntry), stats });
+
+    const catalog: CatalogPlant[] = catalogRows;
+    const body: PlantDexResponse = {
+      entries: rows.map(serializePlantDexEntry),
+      stats,
+      catalog,
+    };
+    return NextResponse.json(body);
   } catch (err) {
     return errorResponse(err);
   }

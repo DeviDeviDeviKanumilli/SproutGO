@@ -17,6 +17,7 @@
     "db:generate": "npm run generate -w @sproutgo/db",
     "db:migrate": "npm run migrate -w @sproutgo/db",
     "db:seed": "npm run seed -w @sproutgo/db",
+    "db:seed:scrape": "npm run seed:scrape -w @sproutgo/db",
     "api:dev": "npm run dev -w @sproutgo/api",
     "mobile:start": "npm run start -w @sproutgo/mobile"
   },

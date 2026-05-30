@@ -5,7 +5,32 @@
 
 ## Where the project stands
 
-M0 + M1 are complete in code. **M2 — Map & geolocation is now wired** as well:
+**M3 — Library & PlantDex screens is now wired in code** (on top of a P1+P2+P3 security
+sweep). New since M2:
+- **Library seed pipeline** (`packages/db/seed/`) — a two-phase USDA/Wikimedia pipeline:
+  `seed:scrape` (maintainer-only, network: USDA NE-states CSV → normalize/dedup/cap to
+  ~300 → resolve one CC/PD Commons image+license per species → committed
+  `plants.normalized.json`) and the offline, idempotent `db:seed` loader
+  (`createMany skipDuplicates`). A committed ~21-species NE stand-in dataset lets the
+  loader + screens work before the full scrape runs. Resolves OPEN_QUESTIONS #1 (NE US)
+  and #2 (~300). Pure modules (`usda`, `normalize`, `rarity`, `wikimedia`, `loader`) are
+  unit-tested (27 db tests).
+- **Backend** — new `GET /library` (q/type/rarity/native/sort + offset pagination via
+  `contains` + facet indexes), new `GET /library/:plantId` (plant + privacy-filtered
+  community photos + server-fuzzed sightings), and `GET /plantdex/me` extended with the
+  full `catalog` for locked grid states. `computeStats` extracted to `lib/stats.ts`.
+- **Mobile** — Library tab now hits `/library` (search + facet chips + sort, debounced);
+  Plant Detail (`plant/[id]`) is wired to `/library/:id` (real fields, CC attribution,
+  real sighting counts; no more hardcoded confidence); the PlantDex grid renders the full
+  catalog with locked silhouettes for undiscovered species.
+- **Schema** — added nullable `imageLicense` / `imageAttribution` / `imageSourceUrl` to
+  `Plant`. **This migration is NOT yet created/applied** — it stacks on the unapplied
+  security-sweep migration (publicLat/Long, `privacy @default(PRIVATE)`,
+  `Profile.dateOfBirth`); both need a provisioned Supabase DB (`db:migrate`).
+- Out of scope (deferred): `GET /plantdex/:userId` + Feed → M4; Postgres FTS → post-M3
+  (`contains` covers MVP); plant chat → M5 (Detail keeps the button, no handler yet).
+
+Earlier: M0 + M1 complete; **M2 — Map & geolocation wired**:
 - **Backend** — `GET /api/v1/observations?bbox=` returns privacy-filtered discovery
   pins (own + PUBLIC + accepted-FRIENDS), with rare/sensitive plant coordinates
   fuzzed server-side (`geo.ts`, ~500m snap-to-grid; resolves OPEN_QUESTIONS #8 for
@@ -34,10 +59,13 @@ credentials needed); the OpenAI vision adapter activates automatically when
 `OPENAI_API_KEY` is set. Library matching still benefits from a seeded Library
 (`LIBRARY_SEED.md`) — unseeded, the stub auto-creates `OPENAI`-sourced Plant rows.
 
-Verified green (latest):
-- `npm run build:shared` + `npm run typecheck` — pass across all 4 workspaces
-- `npm run test` — 27 tests pass (scoring, stub identifier, observation pipeline,
-  geo fuzzing, marker serializer, bbox validation)
+Verified green (latest, M3):
+- `npm run build:shared` + `npm run db:generate` + `npm run typecheck` — pass across all
+  4 workspaces
+- `npm run test` — 111 tests pass (shared 6, db 27, api 56, mobile 22): scoring, identify,
+  observation pipeline, geo fuzzing, marker serializer, bbox + library validation, library
+  sort, and the seed pipeline (rarity, USDA transforms, normalize/cap, image license gate,
+  committed-dataset integrity)
 
 **NOT runtime-verified:** the Mapbox map and the live GPS→bbox round-trip. Mapbox
 needs the dev build (won't run in Expo Go), and no Mapbox tokens, Supabase Storage

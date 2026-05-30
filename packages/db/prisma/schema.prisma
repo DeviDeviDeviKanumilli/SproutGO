@@ -106,6 +106,12 @@ model Plant {
   nativeStatus   NativeStatus @default(UNKNOWN)
   rarity         Rarity       @default(COMMON)
   imageUrl       String?
+  // Attribution for seeded Wikimedia/Commons images. CC-BY / CC-BY-SA legally require
+  // crediting the author + license; populated by the seed scrape, null for AI-created or
+  // image-less rows (LIBRARY_SEED.md). Nullable so existing rows/defaults are unaffected.
+  imageLicense     String?
+  imageAttribution String?
+  imageSourceUrl   String?
   source         IdSource     @default(SEED)
   confidence     Float?
   createdAt      DateTime     @default(now())
