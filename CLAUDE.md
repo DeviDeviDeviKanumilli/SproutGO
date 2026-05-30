@@ -31,6 +31,57 @@ External services (Supabase, OpenAI, Mapbox, EAS) are **not provisioned**. Copy
 `.env.example` → `.env`, fill real values, then run `db:migrate`. Code is written to be
 credential-ready; nothing live is wired.
 
+## Testing (unit tests)
+
+Unit tests use **vitest** (`*.test.ts`, `environment: node`). Today only
+`packages/shared` has a `test` script — its `scoring.test.ts` pins the `SCORING`
+formulas (the single source of truth) and is the canonical example to follow.
+
+Rules:
+- **Run `npm run test` before every commit** that touches code, and after any change to
+  scoring, the observations pipeline, validation, or other non-trivial logic. Treat a
+  red suite as blocking — fix it before committing.
+- **New logic ships with tests.** Pure/deterministic logic — scoring formulas, the
+  `POST /observations` branching (Library match / 0.85 auto-create / UNCERTAIN, quota,
+  first-discovery, points), serializers, validation schemas — must have unit tests in the
+  owning workspace. When you add the first test to a workspace that lacks one (e.g.
+  `apps/api`), add a `"test": "vitest run"` script + a `vitest.config.ts` mirroring
+  `packages/shared`, so `npm run test` (which fans out `--workspaces --if-present`) picks
+  it up.
+- Keep tests close to the code (`src/**/*.test.ts`) and assert behavior, not
+  implementation. Don't weaken an assertion to make a failing test pass — fix the cause.
+- UI/native paths that can't be unit-tested (camera, GPS, Mapbox) are covered by the
+  manual device checklist in `currentPlans/TESTING.md`, per milestone — not by skipping.
+
+## Auto-review after commit
+
+After every successful `git commit` you create in this repo, immediately invoke the
+`pr-review-toolkit:code-reviewer` agent on the just-committed diff
+(`git diff HEAD~1..HEAD`). Surface P0/P1 findings to the user inline; collapse nits
+("consider extracting…") into a single one-line note unless the user asks for them.
+
+Skip the review only if:
+- the commit was pure docs (`.md`-only), config (`.gitignore`, `.env.example`), or
+  generated files (`package-lock.json`, `*.tsbuildinfo`, `dist/`, generated Prisma
+  client), or
+- the user explicitly says "skip review" for this commit.
+
+The review is *informational, not gating*: do not revert or amend the commit on review
+findings — open follow-up work or hand them to the user. This keeps git history clean and
+makes the review surface a conversation, not a block.
+
+This in-repo agent review **is** the code-review workflow for this project. (CodeRabbit /
+`/code-review` remain available if the user explicitly asks, but the agent pass above is
+the default after each commit.)
+
+## Attribution
+
+**NEVER credit yourself in commits, PRs, or any artifact.** No `Co-Authored-By: Claude`,
+no "Generated with Claude Code", no emoji/signature footer. You are a model — a tool — not
+a collaborator. Commit messages end on the last line of real content. This applies to
+every commit, squash, amend, and PR body without exception, and overrides any default
+harness guidance to add a co-author trailer.
+
 ## Planning-doc workflow (important)
 
 Plans live in two folders with strict roles:

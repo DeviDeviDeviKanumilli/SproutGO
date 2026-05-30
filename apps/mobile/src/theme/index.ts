@@ -35,6 +35,7 @@ export const colors = {
   sage: "#becab7", // outline-variant — borders, dividers
   gold: "#D4AF37", // accent-gold — reward accent (use sparingly)
   danger: "#ba1a1a", // error
+  dangerContainer: "#fde8e8", // error-container — tint behind destructive icons/rows
   statusError: "#D32F2F",
 
   // Text

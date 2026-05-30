@@ -100,6 +100,12 @@ export default function FeedScreen() {
               );
             })}
       </ScrollView>
+
+      {seg !== "Forums" ? (
+        <Pressable style={styles.fab} onPress={() => router.push("/post/new")}>
+          <Icon name="add" size={28} color={colors.onPrimary} />
+        </Pressable>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -117,6 +123,22 @@ const styles = StyleSheet.create({
   segmentIdle: { backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.sage },
   segmentText: { ...typography.badge },
   scroll: { paddingHorizontal: spacing.lg, paddingBottom: 120, gap: spacing.lg },
+  fab: {
+    position: "absolute",
+    right: spacing.lg,
+    bottom: 96,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: colors.deep,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
   postCard: {
     backgroundColor: colors.surfaceLowest,
     borderRadius: radius.cardLarge,

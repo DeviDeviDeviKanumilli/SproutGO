@@ -37,6 +37,9 @@ export default function PlantDetail() {
               <Icon name="share" size={20} color={colors.text} />
             </Pressable>
           </SafeAreaView>
+          <View style={styles.heroBadge}>
+            <RarityBadge rarity={plant.rarity} solid />
+          </View>
           <View style={styles.heroText}>
             <Text style={styles.heroTitle}>{plant.commonName}</Text>
             <Text style={styles.heroSci}>{plant.scientificName}</Text>
@@ -45,31 +48,58 @@ export default function PlantDetail() {
 
         <View style={styles.body}>
           <View style={styles.chipRow}>
-            <RarityBadge rarity={plant.rarity} />
             <View style={styles.metaChip}>
-              <Icon name="verified" size={15} color={colors.primary} />
-              <Text style={styles.metaChipText}>94% Confidence</Text>
+              <Icon name="grass" size={15} color={colors.secondary} />
+              <Text style={styles.metaChipText}>{plant.type}</Text>
             </View>
             <View style={styles.metaChip}>
               <Icon name="public" size={15} color={colors.secondary} />
               <Text style={styles.metaChipText}>{plant.nativeStatus}</Text>
             </View>
+            <View style={styles.metaChip}>
+              <Icon name="verified" size={15} color={colors.primary} />
+              <Text style={styles.metaChipText}>94% Confidence</Text>
+            </View>
           </View>
 
+          <Pressable style={styles.chatCta} onPress={() => router.push(`/chat/${plant.id}`)}>
+            <Icon name="chat-bubble" size={20} color={colors.onPrimary} />
+            <Text style={styles.chatCtaText}>Chat with this Plant</Text>
+          </Pressable>
+
           <Card style={styles.section}>
-            <Text style={typography.sectionTitle}>Overview</Text>
+            <Text style={styles.sectionHead}>
+              <Icon name="info" size={18} color={colors.primary} /> Overview
+            </Text>
             <Text style={[typography.body, styles.para]}>{plant.description}</Text>
           </Card>
 
           <Card style={styles.section}>
-            <Text style={typography.sectionTitle}>Habitat</Text>
+            <Text style={styles.sectionHead}>
+              <Icon name="forest" size={18} color={colors.primary} /> Habitat
+            </Text>
             <Text style={[typography.body, styles.para]}>{plant.habitat}</Text>
           </Card>
 
-          <Pressable style={styles.chatCta} onPress={() => router.push(`/chat/${plant.id}`)}>
-            <Icon name="chat-bubble" size={20} color={colors.onPrimary} />
-            <Text style={styles.chatCtaText}>Chat with {plant.commonName}</Text>
-          </Pressable>
+          <Card style={styles.section}>
+            <Text style={styles.sectionHead}>
+              <Icon name="map" size={18} color={colors.primary} /> Map Sightings
+            </Text>
+            <View style={styles.mapMini}>
+              {[...Array(6)].map((_, i) => (
+                <View key={`h${i}`} style={[styles.mapGrid, { top: `${i * 18}%` }]} />
+              ))}
+              {[...Array(5)].map((_, i) => (
+                <View key={`v${i}`} style={[styles.mapGridV, { left: `${i * 22}%` }]} />
+              ))}
+              <View style={[styles.mapMarker, { backgroundColor: colors.rarity[plant.rarity] }]}>
+                <Icon name="eco" size={16} color={colors.onPrimary} />
+              </View>
+            </View>
+            <Text style={[typography.caption, { textAlign: "center", marginTop: spacing.sm }]}>
+              Most commonly sighted near its native {(plant.habitat.split(",")[0] ?? plant.habitat).toLowerCase()}.
+            </Text>
+          </Card>
         </View>
       </ScrollView>
     </View>
@@ -89,6 +119,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  heroBadge: { position: "absolute", top: 56, right: spacing.md },
   heroText: { padding: spacing.lg },
   heroTitle: { ...typography.largeTitle, color: colors.onPrimary, textShadowColor: "rgba(0,0,0,0.4)", textShadowRadius: 6 },
   heroSci: { ...typography.scientificName, color: colors.onPrimary, fontSize: 15 },
@@ -107,7 +138,30 @@ const styles = StyleSheet.create({
   },
   metaChipText: { ...typography.caption, color: colors.text },
   section: { padding: spacing.md, gap: spacing.xs, backgroundColor: colors.surfaceLowest },
+  sectionHead: { ...typography.sectionTitle, color: colors.primary },
   para: { color: colors.textMuted },
+  mapMini: {
+    height: 160,
+    borderRadius: radius.image,
+    backgroundColor: colors.surfaceContainer,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.sm,
+  },
+  mapGrid: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: colors.sage, opacity: 0.4 },
+  mapGridV: { position: "absolute", top: 0, bottom: 0, width: 1, backgroundColor: colors.sage, opacity: 0.4 },
+  mapMarker: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.surfaceLowest,
+  },
   chatCta: {
     flexDirection: "row",
     alignItems: "center",

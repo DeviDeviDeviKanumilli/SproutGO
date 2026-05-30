@@ -25,7 +25,11 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <AppHeader
         title="SproutGo"
-        right={<Icon name="settings" size={24} color={colors.textMuted} />}
+        right={
+          <Pressable hitSlop={8} onPress={() => router.push("/settings")}>
+            <Icon name="settings" size={24} color={colors.textMuted} />
+          </Pressable>
+        }
       />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
@@ -38,11 +42,11 @@ export default function ProfileScreen() {
           <Text style={[typography.sectionTitle, { marginTop: spacing.md }]}>{profile.username}</Text>
           <Text style={[typography.body, styles.bio]}>{profile.bio}</Text>
           <View style={styles.headerActions}>
-            <Pressable style={styles.editBtn}>
+            <Pressable style={styles.editBtn} onPress={() => router.push("/profile/edit")}>
               <Text style={styles.editBtnText}>Edit Profile</Text>
             </Pressable>
-            <Pressable style={styles.shareBtn}>
-              <Icon name="share" size={20} color={colors.primary} />
+            <Pressable style={styles.shareBtn} onPress={() => router.push("/friends")}>
+              <Icon name="group" size={20} color={colors.primary} />
             </Pressable>
           </View>
         </View>

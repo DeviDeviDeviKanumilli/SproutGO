@@ -79,7 +79,9 @@ export default function CaptureScreen() {
           <Text style={styles.instructionText}>Center your plant</Text>
         </View>
         <View style={styles.controlRow}>
-          <View style={styles.glassBtn} />
+          <View style={styles.glassBtn}>
+            <Icon name="photo-library" size={24} color={colors.onPrimary} />
+          </View>
           <Pressable style={styles.shutter} onPress={onShutter} disabled={busy}>
             <View style={styles.shutterInner}>
               <Icon name="local-florist" size={30} color={colors.onPrimary} />

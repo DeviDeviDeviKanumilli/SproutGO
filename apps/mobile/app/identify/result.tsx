@@ -130,9 +130,9 @@ export default function IdentifyResult() {
               <Icon name="menu-book" size={20} color={colors.onPrimary} />
               <Text style={styles.primaryText}>View PlantDex Entry</Text>
             </Pressable>
-            <Pressable style={styles.secondaryBtn} onPress={() => router.replace("/(tabs)/plantdex")}>
-              <Icon name="grid-view" size={20} color={colors.primary} />
-              <Text style={styles.secondaryText}>Back to PlantDex</Text>
+            <Pressable style={styles.secondaryBtn} onPress={() => router.replace("/post/new")}>
+              <Icon name="ios-share" size={20} color={colors.primary} />
+              <Text style={styles.secondaryText}>Share Discovery</Text>
             </Pressable>
           </>
         )}

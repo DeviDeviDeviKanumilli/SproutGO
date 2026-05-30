@@ -1,16 +1,20 @@
 // PlantDex tab — collection progress + hexagon badge grid (Stitch "PlantDex Screen").
-// Fetches the user's discovered species from GET /plantdex/me. The server returns only
-// discovered entries, so the grid shows unlocked species; rarity filters narrow them.
+// "My PlantDex" fetches the user's discovered species from GET /plantdex/me (server
+// returns only unlocked entries; rarity filters narrow them). "Library" (design §7.2)
+// shows the full encyclopedia from local fixtures.
 import { useCallback, useState } from "react";
-import { ScrollView, View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator } from "react-native";
+import { ScrollView, View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import type { PlantDexResponse, Rarity } from "@sproutgo/shared";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
-import { AppHeader, Chip } from "@/components/ui";
+import { AppHeader, Chip, RarityBadge } from "@/components/ui";
 import { HexBadge } from "@/components/HexBadge";
 import { api, ApiClientError } from "@/lib/api";
+import { plants, rarityLabel } from "@/lib/mockData";
+
+const MODES = ["My PlantDex", "Library"] as const;
 
 const FILTERS: { key: string; label: string }[] = [
   { key: "all", label: "All" },
@@ -22,6 +26,7 @@ const FILTERS: { key: string; label: string }[] = [
 
 export default function PlantDexScreen() {
   const router = useRouter();
+  const [mode, setMode] = useState<(typeof MODES)[number]>("My PlantDex");
   const [filter, setFilter] = useState("all");
   const [data, setData] = useState<PlantDexResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,6 +63,25 @@ export default function PlantDexScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <AppHeader title="SproutGo" />
+
+      <View style={styles.toggle}>
+        {MODES.map((m) => {
+          const active = mode === m;
+          return (
+            <Pressable
+              key={m}
+              onPress={() => setMode(m)}
+              style={[styles.toggleTab, active && styles.toggleTabActive]}
+            >
+              <Text style={[styles.toggleText, active && styles.toggleTextActive]}>{m}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {mode === "Library" ? (
+        <LibraryView router={router} />
+      ) : (
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <Text style={typography.largeTitle}>PlantDex</Text>
@@ -148,13 +172,166 @@ export default function PlantDexScreen() {
           </View>
         )}
       </ScrollView>
+      )}
     </SafeAreaView>
+  );
+}
+
+// Library view (design §8.10) — the full encyclopedia: searchable list with type +
+// native-status badges and a discovered indicator. Shares mockData with the PlantDex.
+function LibraryView({ router }: { router: ReturnType<typeof useRouter> }) {
+  const [query, setQuery] = useState("");
+  const list = plants.filter(
+    (p) =>
+      p.commonName.toLowerCase().includes(query.toLowerCase()) ||
+      p.scientificName.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  const discovered = plants.filter((p) => p.discovered).length;
+
+  return (
+    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <View style={[styles.searchRow, { marginTop: spacing.md }]}>
+        <Icon name="search" size={20} color={colors.textMuted} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search the PlantDex..."
+          placeholderTextColor={colors.textMuted}
+          style={styles.searchInput}
+        />
+      </View>
+
+      <View style={styles.libHeader}>
+        <View>
+          <Text style={typography.sectionTitle}>Full Collection</Text>
+          <Text style={typography.caption}>
+            {discovered} of {plants.length} Discovered
+          </Text>
+        </View>
+        <View style={styles.sortBtn}>
+          <Text style={styles.sortText}>Sort: A–Z</Text>
+          <Icon name="expand-more" size={16} color={colors.primary} />
+        </View>
+      </View>
+
+      <View style={styles.libGrid}>
+        {list.map((p) => (
+          <Pressable
+            key={p.id}
+            style={[styles.libCard, !p.discovered && styles.libCardLocked]}
+            onPress={() => router.push(`/plant/${p.id}`)}
+          >
+            <View style={styles.libCardImgWrap}>
+              {p.discovered && p.imageUrl ? (
+                <Image source={{ uri: p.imageUrl }} style={styles.libCardImg} />
+              ) : (
+                <View style={styles.libCardSilhouette}>
+                  <Icon name="local-florist" size={56} color={colors.outlineVariant} />
+                </View>
+              )}
+              <View style={[styles.libRarityPill, { backgroundColor: colors.rarity[p.rarity] }]}>
+                <Text style={styles.libRarityText}>{rarityLabel[p.rarity]}</Text>
+              </View>
+              <View style={styles.libStatus}>
+                <Icon
+                  name={p.discovered ? "check-circle" : "lock"}
+                  size={18}
+                  color={p.discovered ? colors.primary : colors.outlineVariant}
+                />
+              </View>
+            </View>
+            <View style={styles.libCardBody}>
+              <Text style={[typography.body, { fontWeight: "600" }]} numberOfLines={1}>
+                {p.commonName}
+              </Text>
+              <Text style={typography.scientificName} numberOfLines={1}>
+                {p.scientificName}
+              </Text>
+              <View style={styles.libCardFoot}>
+                {p.discovered ? (
+                  <>
+                    <Icon name="location-on" size={13} color={colors.outline} />
+                    <Text style={styles.libFootText} numberOfLines={1}>
+                      {p.location ?? "Discovered"}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.libFootText}>Undiscovered</Text>
+                )}
+              </View>
+            </View>
+          </Pressable>
+        ))}
+      </View>
+      {list.length === 0 ? (
+        <Text style={styles.libEmpty}>No plants found. Try a common name or type.</Text>
+      ) : null}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingHorizontal: spacing.lg, paddingBottom: 120 },
+  toggle: {
+    flexDirection: "row",
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    padding: 4,
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: radius.pill,
+  },
+  toggleTab: { flex: 1, alignItems: "center", paddingVertical: spacing.sm, borderRadius: radius.pill },
+  toggleTabActive: { backgroundColor: colors.surfaceLowest },
+  toggleText: { ...typography.badge, color: colors.textMuted },
+  toggleTextActive: { color: colors.primary },
+  libHeader: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  sortBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
+  sortText: { ...typography.badge, color: colors.primary },
+  libGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing.md },
+  libCard: {
+    width: "47.5%",
+    backgroundColor: colors.surfaceLowest,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.sage,
+    overflow: "hidden",
+  },
+  libCardLocked: { borderStyle: "dashed", borderColor: colors.outlineVariant, backgroundColor: colors.surfaceLow },
+  libCardImgWrap: { aspectRatio: 1, backgroundColor: colors.surfaceVariant },
+  libCardImg: { width: "100%", height: "100%" },
+  libCardSilhouette: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceHigh },
+  libRarityPill: {
+    position: "absolute",
+    bottom: spacing.sm,
+    left: spacing.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  libRarityText: { ...typography.badge, fontSize: 9, color: colors.onPrimary },
+  libStatus: {
+    position: "absolute",
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  libCardBody: { padding: spacing.sm + 2, gap: 2 },
+  libCardFoot: { flexDirection: "row", alignItems: "center", gap: 3, marginTop: 4 },
+  libFootText: { ...typography.badge, fontSize: 10, color: colors.outline, textTransform: "uppercase", flex: 1 },
+  libEmpty: { ...typography.caption, textAlign: "center", paddingVertical: spacing.xl, width: "100%" },
   hero: {
     backgroundColor: colors.mint,
     borderRadius: radius.card,

@@ -44,7 +44,9 @@ export default function Processing() {
         const result = await api.post<ObservationResult>("/observations", { imagePath });
         if (cancelled) return;
         setLastResult(result);
-        router.replace("/identify/result");
+        // A first discovery earns the special gold reward modal (design §8.8); every
+        // other match goes to the standard result screen.
+        router.replace(result.isFirstDiscovery ? "/identify/first-discovery" : "/identify/result");
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Identification failed.");
       }

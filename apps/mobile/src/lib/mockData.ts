@@ -406,9 +406,117 @@ export const profile = {
 
 export const recentDiscoveryIds = ["monstera", "pothos", "ghost-orchid"];
 
+// --- Friends ---------------------------------------------------------------
+export interface Friend {
+  id: string;
+  name: string;
+  username: string;
+  avatarUrl: string;
+  species: number;
+  mutuals?: number;
+}
+
+export const friends: Friend[] = [
+  { id: "f1", name: "Alex River", username: "@alexriver", avatarUrl: img("photo-1500648767791-00dcc994a43e"), species: 142, mutuals: 8 },
+  { id: "f2", name: "Maya Lin", username: "@mayalin", avatarUrl: img("photo-1438761681033-6461ffad8d80"), species: 98, mutuals: 5 },
+  { id: "f3", name: "Sam Okafor", username: "@samokafor", avatarUrl: img("photo-1507003211169-0a1dd7228f2d"), species: 67, mutuals: 12 },
+  { id: "f4", name: "Sarah Explorer", username: "@sarahx", avatarUrl: img("photo-1534528741775-53994a69daeb"), species: 211, mutuals: 3 },
+];
+
+export const friendRequests: Friend[] = [
+  { id: "r1", name: "BotanistBob", username: "@botanistbob", avatarUrl: img("photo-1472099645785-5658abf4ff4e"), species: 320, mutuals: 6 },
+  { id: "r2", name: "Jordan Fields", username: "@jfields", avatarUrl: img("photo-1507591064344-4c6ce005b128"), species: 54, mutuals: 2 },
+];
+
+export const suggestedFriends: Friend[] = [
+  { id: "s1", name: "Priya Nair", username: "@priyanair", avatarUrl: img("photo-1544005313-94ddf0286df2"), species: 176, mutuals: 9 },
+  { id: "s2", name: "Tom Hayes", username: "@tomhayes", avatarUrl: img("photo-1506794778202-cad84cf45f1d"), species: 41, mutuals: 1 },
+];
+
+// --- Settings --------------------------------------------------------------
+export interface SettingRow {
+  key: string;
+  label: string;
+  icon: IconName;
+  kind: "toggle" | "link" | "value";
+  value?: string;
+  on?: boolean;
+  destructive?: boolean;
+}
+
+export interface SettingSection {
+  title: string;
+  rows: SettingRow[];
+}
+
+export const settingsSections: SettingSection[] = [
+  {
+    title: "Account",
+    rows: [
+      { key: "edit", label: "Edit Profile", icon: "person", kind: "link" },
+      { key: "email", label: "Email", icon: "mail", kind: "value", value: "explorer@sproutgo.app" },
+      { key: "privacy", label: "Default Discovery Privacy", icon: "lock", kind: "value", value: "Public" },
+    ],
+  },
+  {
+    title: "Notifications",
+    rows: [
+      { key: "push", label: "Push Notifications", icon: "notifications", kind: "toggle", on: true },
+      { key: "friends", label: "Friend Activity", icon: "group", kind: "toggle", on: true },
+      { key: "rare", label: "Rare Finds Nearby", icon: "star", kind: "toggle", on: false },
+    ],
+  },
+  {
+    title: "Preferences",
+    rows: [
+      { key: "units", label: "Distance Units", icon: "straighten", kind: "value", value: "Miles" },
+      { key: "location", label: "Location Services", icon: "place", kind: "toggle", on: true },
+    ],
+  },
+  {
+    title: "Support",
+    rows: [
+      { key: "help", label: "Help & FAQ", icon: "help", kind: "link" },
+      { key: "about", label: "About SproutGo", icon: "info", kind: "link" },
+      { key: "signout", label: "Sign Out", icon: "logout", kind: "link", destructive: true },
+    ],
+  },
+];
+
+// --- Onboarding ------------------------------------------------------------
+export interface OnboardingSlide {
+  key: string;
+  title: string;
+  body: string;
+  icon: IconName;
+}
+
+export const onboardingSlides: OnboardingSlide[] = [
+  {
+    key: "discover",
+    title: "Discover plants around you",
+    body: "Explore a living map of plant discoveries from you, your friends, and the community.",
+    icon: "map",
+  },
+  {
+    key: "identify",
+    title: "Identify plants with AI",
+    body: "Point your camera at any plant and let SproutGo identify the species in seconds.",
+    icon: "photo-camera",
+  },
+  {
+    key: "collect",
+    title: "Build your PlantDex",
+    body: "Every discovery unlocks a collectible badge. Earn points and complete your collection.",
+    icon: "grid-view",
+  },
+];
+
 export const identifyResult = {
   plantId: "monstera",
   points: 65,
   confidence: 0.94,
-  isFirstDiscovery: false,
+  // Drives the post-capture branch: true → gold First Discovery modal (design §8.8),
+  // false → standard result screen. Flip to preview either reward state.
+  isFirstDiscovery: true,
 };

@@ -69,8 +69,8 @@ export default function Login() {
         <Text style={styles.buttonText}>{busy ? "Logging in…" : "Log in"}</Text>
       </TouchableOpacity>
 
-      <Link href="/(auth)/signup" style={styles.link}>
-        <Text style={typography.caption}>New here? Create an account</Text>
+      <Link href="/(auth)/onboarding" style={styles.link}>
+        <Text style={typography.caption}>New here? Take a quick tour</Text>
       </Link>
     </KeyboardAvoidingView>
   );
