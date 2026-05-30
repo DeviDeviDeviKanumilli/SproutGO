@@ -81,6 +81,15 @@ manages the `Profile` row keyed to the auth user id.
 | POST | `/posts/:id/comments` | yes | `{ body }` | `Comment` | 400 |
 | POST | `/posts/:id/report` | yes | `{ reason }` | `204` | 404 |
 
+> **M4 notes (implemented):** `report` persists a `Report` row (moderation trail) rather than
+> being a logged no-op; `DELETE /posts/:id` is gated to the owner OR `Profile.isAdmin`.
+> **Forums are not a separate model** — a forum "thread" is a `Post` with a `category` from the
+> fixed `FORUM_CATEGORIES` list (`packages/shared`); browse via `GET /posts?scope=forum&category=`.
+> Post images are returned as short-lived signed URLs (the `observations` bucket is private).
+> `GET /profile/:id` returns the full social profile (stats + friendship status + recent
+> discoveries + visible posts) and works for self (`friendship: "self"`). Friend **suggestions**
+> were dropped for MVP (search + requests only).
+
 ## Friends
 
 | Method | Path | Auth | Request | Response | Errors |

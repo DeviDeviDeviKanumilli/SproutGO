@@ -1,18 +1,53 @@
-// Edit Profile (design §8.15). Avatar with change affordance + editable fields.
-// Presentational — seeds from mockData.profile; Save routes back.
-import { useState } from "react";
-import { ScrollView, View, Text, StyleSheet, Pressable, TextInput, Image } from "react-native";
+// Edit Profile (design §8.15). Loads the caller's profile (GET /profile/me) and saves changes
+// via PATCH /profile/me (username + bio; avatar upload is post-MVP).
+import { useCallback, useEffect, useState } from "react";
+import { ScrollView, View, Text, StyleSheet, Pressable, TextInput, Image, Alert, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import type { ProfileWithStats } from "@sproutgo/shared";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
-import { profile } from "@/lib/mockData";
+import { api, ApiClientError } from "@/lib/api";
 
 export default function EditProfile() {
   const router = useRouter();
-  const [name, setName] = useState("Nature Explorer");
-  const [username, setUsername] = useState(profile.username.replace(/^@/, ""));
-  const [bio, setBio] = useState(profile.bio);
+  const [me, setMe] = useState<ProfileWithStats | null>(null);
+  const [username, setUsername] = useState("");
+  const [bio, setBio] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    api
+      .get<ProfileWithStats>("/profile/me")
+      .then((p) => {
+        setMe(p);
+        setUsername(p.username);
+        setBio(p.bio ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  useEffect(load, [load]);
+
+  const save = () => {
+    if (saving) return;
+    const body: { username?: string; bio?: string } = {};
+    if (username.trim() && username.trim() !== me?.username) body.username = username.trim();
+    if (bio !== (me?.bio ?? "")) body.bio = bio.trim();
+    if (Object.keys(body).length === 0) {
+      router.back();
+      return;
+    }
+    setSaving(true);
+    api
+      .patch("/profile/me", body)
+      .then(() => router.back())
+      .catch((e) => {
+        Alert.alert("Couldn't save", e instanceof ApiClientError ? e.message : "Please try again.");
+        setSaving(false);
+      });
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -21,36 +56,39 @@ export default function EditProfile() {
           <Icon name="close" size={24} color={colors.textMuted} />
         </Pressable>
         <Text style={typography.sectionTitle}>Edit Profile</Text>
-        <Pressable hitSlop={8} onPress={() => router.back()}>
-          <Text style={styles.save}>Save</Text>
+        <Pressable hitSlop={8} onPress={save} disabled={saving}>
+          <Text style={[styles.save, saving && { opacity: 0.5 }]}>{saving ? "…" : "Save"}</Text>
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.avatarWrap}>
-          <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
-          <Pressable style={styles.avatarBadge}>
-            <Icon name="photo-camera" size={18} color={colors.onPrimary} />
-          </Pressable>
-        </View>
+      {loading ? (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+      ) : (
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.avatarWrap}>
+            <Image source={{ uri: me?.avatarUrl ?? "" }} style={styles.avatar} />
+            <Pressable style={styles.avatarBadge}>
+              <Icon name="photo-camera" size={18} color={colors.onPrimary} />
+            </Pressable>
+          </View>
 
-        <Field label="Display Name" value={name} onChangeText={setName} placeholder="Your name" />
-        <Field
-          label="Username"
-          value={username}
-          onChangeText={setUsername}
-          placeholder="username"
-          prefix="@"
-          autoCapitalize="none"
-        />
-        <Field
-          label="Bio"
-          value={bio}
-          onChangeText={setBio}
-          placeholder="Tell explorers about yourself"
-          multiline
-        />
-      </ScrollView>
+          <Field
+            label="Username"
+            value={username}
+            onChangeText={setUsername}
+            placeholder="username"
+            prefix="@"
+            autoCapitalize="none"
+          />
+          <Field
+            label="Bio"
+            value={bio}
+            onChangeText={setBio}
+            placeholder="Tell explorers about yourself"
+            multiline
+          />
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }

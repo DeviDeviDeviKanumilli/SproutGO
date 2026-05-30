@@ -174,7 +174,10 @@ export default function IdentifyResult() {
               <Icon name="menu-book" size={20} color={colors.onPrimary} />
               <Text style={styles.primaryText}>View PlantDex Entry</Text>
             </Pressable>
-            <Pressable style={styles.secondaryBtn} onPress={() => router.replace("/post/new")}>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={() => router.replace(`/post/new?observationId=${result.observation.id}`)}
+            >
               <Icon name="ios-share" size={20} color={colors.primary} />
               <Text style={styles.secondaryText}>Share Discovery</Text>
             </Pressable>

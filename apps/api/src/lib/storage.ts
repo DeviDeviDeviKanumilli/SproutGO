@@ -42,13 +42,38 @@ export async function assertObservationImage(imagePath: string): Promise<void> {
   }
 }
 
-/** Short-lived signed URL the identifier (OpenAI) can fetch. */
-export async function createSignedImageUrl(imagePath: string): Promise<string> {
+// Default (identify) TTL is short; feed/post browsing uses a longer one.
+export const POST_IMAGE_TTL_SECONDS = 60 * 60; // 1 hour
+
+/** Short-lived signed URL the identifier (OpenAI) can fetch. Throws if the object is missing. */
+export async function createSignedImageUrl(
+  imagePath: string,
+  ttlSeconds: number = SIGNED_URL_TTL_SECONDS,
+): Promise<string> {
   const { data, error } = await supabaseAdmin()
     .storage.from(OBSERVATIONS_BUCKET)
-    .createSignedUrl(imagePath, SIGNED_URL_TTL_SECONDS);
+    .createSignedUrl(imagePath, ttlSeconds);
   if (error || !data?.signedUrl) {
     throw errors.validation("Could not access the uploaded image");
   }
   return data.signedUrl;
+}
+
+/**
+ * Best-effort signed URL for displaying post/feed images: returns null instead of throwing
+ * when the object is missing or signing fails, so one bad image never breaks a whole feed page.
+ */
+export async function trySignImageUrl(
+  imagePath: string | null,
+  ttlSeconds: number = POST_IMAGE_TTL_SECONDS,
+): Promise<string | null> {
+  if (!imagePath) return null;
+  try {
+    const { data } = await supabaseAdmin()
+      .storage.from(OBSERVATIONS_BUCKET)
+      .createSignedUrl(imagePath, ttlSeconds);
+    return data?.signedUrl ?? null;
+  } catch {
+    return null;
+  }
 }

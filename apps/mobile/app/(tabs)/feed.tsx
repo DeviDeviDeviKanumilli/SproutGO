@@ -1,123 +1,155 @@
-// Feed tab (Stitch Feed Screen). Segmented tabs (Discoveries / Friends / Forums).
-// Discovery posts show a rarity-badged photo, caption, reactions and a "View Plant"
-// CTA. The Forums segment lists categories that route into a thread.
-import { useState } from "react";
-import { ScrollView, View, Text, StyleSheet, Pressable, Image } from "react-native";
+// Feed tab (design §8.13). Segments map to API scopes: Discoveries→feed, Friends→friends,
+// Forums→a category list. Posts come from GET /posts?scope=; likes toggle optimistically; the
+// comment count and image open the post thread. FAB composes a new post.
+import { useCallback, useState } from "react";
+import { ScrollView, View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
+import type { Post, PostsResponse } from "@sproutgo/shared";
+import { FORUM_CATEGORIES } from "@sproutgo/shared";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
-import { AppHeader, RarityBadge, Avatar } from "@/components/ui";
-import { feedPosts, forumCategories, plantById, profile } from "@/lib/mockData";
+import { AppHeader } from "@/components/ui";
+import { PostCard } from "@/components/PostCard";
+import { api, ApiClientError } from "@/lib/api";
 
-const SEGMENTS = ["Discoveries", "Friends", "Forums"] as const;
+const SEGMENTS = [
+  { label: "Discoveries", scope: "feed" },
+  { label: "Friends", scope: "friends" },
+  { label: "Forums", scope: "forum" },
+] as const;
 
 export default function FeedScreen() {
   const router = useRouter();
-  const [seg, setSeg] = useState<(typeof SEGMENTS)[number]>("Discoveries");
+  const [scope, setScope] = useState<(typeof SEGMENTS)[number]["scope"]>("feed");
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    if (scope === "forum") {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<PostsResponse>(`/posts?scope=${scope}`)
+      .then((res) => !cancelled && setPosts(res.posts))
+      .catch((e) =>
+        !cancelled &&
+        setError(e instanceof ApiClientError ? e.message : "Could not load the feed."),
+      )
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [scope]);
+
+  useFocusEffect(load);
+
+  // Optimistic like toggle — flip locally, reconcile with the server, revert on failure.
+  const toggleLike = useCallback((post: Post) => {
+    const liked = !post.likedByMe;
+    setPosts((cur) =>
+      cur.map((p) =>
+        p.id === post.id
+          ? { ...p, likedByMe: liked, likeCount: p.likeCount + (liked ? 1 : -1) }
+          : p,
+      ),
+    );
+    const req = liked ? api.post(`/posts/${post.id}/like`) : api.delete(`/posts/${post.id}/like`);
+    req
+      .then((r) => {
+        const { likeCount } = r as { likeCount: number };
+        setPosts((cur) => cur.map((p) => (p.id === post.id ? { ...p, likeCount } : p)));
+      })
+      .catch(() =>
+        setPosts((cur) =>
+          cur.map((p) =>
+            p.id === post.id
+              ? { ...p, likedByMe: post.likedByMe, likeCount: post.likeCount }
+              : p,
+          ),
+        ),
+      );
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <AppHeader title="SproutGo" avatarUri={profile.avatarUrl} />
+      <AppHeader title="SproutGo" />
       <View style={styles.segmentRow}>
         {SEGMENTS.map((s) => (
           <Pressable
-            key={s}
-            onPress={() => setSeg(s)}
-            style={[styles.segment, seg === s ? styles.segmentActive : styles.segmentIdle]}
+            key={s.scope}
+            onPress={() => setScope(s.scope)}
+            style={[styles.segment, scope === s.scope ? styles.segmentActive : styles.segmentIdle]}
           >
-            <Text style={[styles.segmentText, { color: seg === s ? colors.onPrimary : colors.textMuted }]}>
-              {s}
+            <Text
+              style={[styles.segmentText, { color: scope === s.scope ? colors.onPrimary : colors.textMuted }]}
+            >
+              {s.label}
             </Text>
           </Pressable>
         ))}
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {seg === "Forums"
-          ? forumCategories.map((c) => (
-              <Pressable key={c.id} style={styles.forumCard} onPress={() => router.push(`/forums/${c.id}`)}>
-                <View style={[styles.forumIcon, c.accent && { backgroundColor: colors.gold }]}>
-                  <Icon name={c.icon} size={22} color={c.accent ? colors.onPrimary : colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[typography.body, { fontWeight: "600", color: colors.text }]}>{c.title}</Text>
-                  <Text style={typography.caption} numberOfLines={2}>
-                    {c.blurb}
-                  </Text>
-                  <Text style={[typography.badge, { color: colors.primary, marginTop: 4 }]}>{c.posts}</Text>
-                </View>
-                <Icon name="chevron-right" size={22} color={colors.textMuted} />
-              </Pressable>
-            ))
-          : feedPosts.map((post) => {
-              const plant = plantById(post.plantId)!;
-              return (
-                <View key={post.id} style={styles.postCard}>
-                  <View style={styles.postHead}>
-                    <View style={styles.postAuthor}>
-                      <Avatar uri={post.avatarUrl} size={40} />
-                      <View>
-                        <Text style={styles.authorName}>{post.author}</Text>
-                        <Text style={typography.caption}>
-                          {post.timeAgo} • {post.location}
-                        </Text>
-                      </View>
-                    </View>
-                    <Icon name="more-horiz" size={22} color={colors.textMuted} />
-                  </View>
-
-                  <View style={styles.imageWrap}>
-                    {plant.imageUrl ? <Image source={{ uri: plant.imageUrl }} style={styles.postImage} /> : null}
-                    <View style={styles.badgeOverlay}>
-                      <RarityBadge rarity={plant.rarity} />
-                    </View>
-                  </View>
-
-                  <View style={styles.postBody}>
-                    <Text style={typography.sectionTitle}>{plant.commonName}</Text>
-                    <Text style={typography.scientificName}>{plant.scientificName}</Text>
-                    <Text style={[typography.body, { color: colors.textMuted, marginVertical: spacing.sm }]} numberOfLines={2}>
-                      {post.caption}
-                    </Text>
-                    <View style={styles.actions}>
-                      <View style={styles.action}>
-                        <Icon name="favorite-border" size={22} color={colors.textMuted} />
-                        <Text style={typography.caption}>{post.likes}</Text>
-                      </View>
-                      <View style={styles.action}>
-                        <Icon name="chat-bubble-outline" size={20} color={colors.textMuted} />
-                        <Text style={typography.caption}>{post.comments}</Text>
-                      </View>
-                      <View style={{ flex: 1 }} />
-                      <Pressable style={styles.viewBtn} onPress={() => router.push(`/plant/${plant.id}`)}>
-                        <Text style={styles.viewBtnText}>View Plant</Text>
-                        <Icon name="arrow-forward" size={15} color={colors.primary} />
-                      </Pressable>
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
+        {scope === "forum" ? (
+          FORUM_CATEGORIES.map((c) => (
+            <Pressable key={c.key} style={styles.forumCard} onPress={() => router.push(`/forums/${c.key}`)}>
+              <View style={styles.forumIcon}>
+                <Icon name="forum" size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[typography.body, { fontWeight: "600", color: colors.text }]}>{c.label}</Text>
+                <Text style={typography.caption}>Tap to browse threads</Text>
+              </View>
+              <Icon name="chevron-right" size={22} color={colors.textMuted} />
+            </Pressable>
+          ))
+        ) : loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+        ) : error ? (
+          <View style={styles.notice}>
+            <Icon name="cloud-off" size={32} color={colors.textMuted} />
+            <Text style={styles.noticeText}>{error}</Text>
+            <Pressable style={styles.retryBtn} onPress={load}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : posts.length === 0 ? (
+          <View style={styles.notice}>
+            <Icon name="eco" size={32} color={colors.textMuted} />
+            <Text style={styles.noticeText}>
+              {scope === "friends"
+                ? "No posts from friends yet. Add some explorers!"
+                : "No discoveries shared yet. Be the first!"}
+            </Text>
+          </View>
+        ) : (
+          posts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              onToggleLike={toggleLike}
+              onOpen={(p) => router.push(`/post/${p.id}`)}
+            />
+          ))
+        )}
       </ScrollView>
 
-      {seg !== "Forums" ? (
-        <Pressable style={styles.fab} onPress={() => router.push("/post/new")}>
-          <Icon name="add" size={28} color={colors.onPrimary} />
-        </Pressable>
-      ) : null}
+      <Pressable style={styles.fab} onPress={() => router.push("/post/new")}>
+        <Icon name="add" size={28} color={colors.onPrimary} />
+      </Pressable>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  segmentRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
+  segmentRow: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   segment: { flex: 1, alignItems: "center", paddingVertical: spacing.sm, borderRadius: radius.pill },
   segmentActive: { backgroundColor: colors.primary },
   segmentIdle: { backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.sage },
@@ -139,46 +171,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 5,
   },
-  postCard: {
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: radius.cardLarge,
-    borderWidth: 1,
-    borderColor: colors.sage,
-    overflow: "hidden",
-  },
-  postHead: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: spacing.md,
-  },
-  postAuthor: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  authorName: { ...typography.caption, fontWeight: "600", color: colors.text },
-  imageWrap: { width: "100%", aspectRatio: 4 / 3, backgroundColor: colors.surfaceVariant },
-  postImage: { width: "100%", height: "100%" },
-  badgeOverlay: { position: "absolute", top: spacing.md, right: spacing.md },
-  postBody: { padding: spacing.md },
-  actions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceVariant,
-    paddingTop: spacing.sm,
-  },
-  action: { flexDirection: "row", alignItems: "center", gap: 4 },
-  viewBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.surfaceLow,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  viewBtnText: { ...typography.badge, color: colors.primary },
   forumCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -197,4 +189,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  notice: { alignItems: "center", gap: spacing.md, paddingVertical: spacing.xxl, paddingHorizontal: spacing.lg },
+  noticeText: { ...typography.body, color: colors.textMuted, textAlign: "center" },
+  retryBtn: { backgroundColor: colors.primary, borderRadius: radius.button, paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },
+  retryText: { ...typography.body, color: colors.onPrimary, fontWeight: "600" },
 });

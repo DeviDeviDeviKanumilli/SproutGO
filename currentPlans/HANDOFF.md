@@ -39,8 +39,34 @@ its env vars not set. Migration file above not committed. Mapbox token absent.
 
 ## Where the project stands
 
-**M3 — Library & PlantDex screens is now wired in code** (on top of a P1+P2+P3 security
-sweep). New since M2:
+**M4 — Social layer is now wired in code, against a LIVE database.** The Supabase env was
+provisioned, so the schema was migrated and the Library seeded for real:
+- **Live DB** — the schema is migrated and the Library seeded (21 species); the private
+  `observations` Storage bucket exists. All three migration files are now committed in
+  `packages/db/prisma/migrations/` (`20260530171505_init` + `20260530175743_add_plant_attribution`
+  from the provisioning commit, then `20260530180000_add_report` added this pass for the
+  moderation model). Future schema changes use `db:migrate`/`db:seed` normally.
+- **Secrets** — real credentials were briefly pasted into the git-tracked `.env.example`;
+  they were relocated to gitignored `.env` files (root, `apps/api/.env`, `packages/db/.env`,
+  `apps/mobile/.env`) and `.env.example` was restored to placeholders. **Never put real values
+  in `.env.example`.**
+- **Backend** — full social surface: `POST/GET /posts`, `GET/DELETE /posts/:id`,
+  `POST/DELETE /posts/:id/like`, `POST /posts/:id/comments`, `POST /posts/:id/report`;
+  `GET /users/search`, `POST/GET /friends/requests`, `PATCH /friends/requests/:id`,
+  `GET /friends`, `DELETE /friends/:id`; and `GET /profile/:id` extended to the full social
+  profile (stats + friendship status + recent discoveries + posts). Privacy enforced in the
+  Prisma `where`; like/comment counters and the friend-request→Friendship transition are
+  transactional; admin-delete gated on `Profile.isAdmin`; post images served via short-lived
+  signed URLs. New helpers: `lib/posts.ts`, `lib/friends.ts` (orderedPair/computeFriendship).
+- **Mobile** — feed (3 scopes + optimistic likes), post detail + comments, post composer
+  (discovery + forum thread), forums (category list → thread), friends (search/requests/
+  accept-reject), and both profile screens (own + public, friendship-aware) are wired. Shared
+  `PostCard` + `ProfileContent` components. The capture "Share Discovery" now passes the
+  observation into the composer. Mock fixtures remain only for the M5 chat screen + settings.
+- Out of scope (deferred): friend suggestions (dropped); settings persistence (UI-only);
+  threaded comment replies; plant chat (`chat/[id]`) → **M5**.
+
+Earlier: **M3 — Library & PlantDex screens** (on top of a P1+P2+P3 security sweep):
 - **Library seed pipeline** (`packages/db/seed/`) — a two-phase USDA/Wikimedia pipeline:
   `seed:scrape` (maintainer-only, network: USDA NE-states CSV → normalize/dedup/cap to
   ~300 → resolve one CC/PD Commons image+license per species → committed

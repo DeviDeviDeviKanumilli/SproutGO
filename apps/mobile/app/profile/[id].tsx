@@ -1,41 +1,114 @@
-// Friend profile (design §8.16). Public view of another explorer: header, stats,
-// recent discoveries, PlantDex progress. Presentational — looks the friend up in
-// mockData; falls back gracefully if not found.
-import { ScrollView, View, Text, StyleSheet, Pressable, Image } from "react-native";
+// Public profile of another explorer (design §8.15/§8.16). Fetches GET /profile/:id and renders
+// the shared ProfileContent with a friendship-aware action button (Add / Requested / Respond /
+// Friends). Accepting an incoming request happens on the Friends screen (needs the request id).
+import { useCallback, useEffect, useState } from "react";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import type { FriendshipStatus, PublicProfileResponse } from "@sproutgo/shared";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
-import { RarityBadge, SectionTitle } from "@/components/ui";
-import {
-  friends,
-  friendRequests,
-  suggestedFriends,
-  recentDiscoveryIds,
-  plantById,
-} from "@/lib/mockData";
+import { ProfileContent } from "@/components/ProfileContent";
+import { api, ApiClientError } from "@/lib/api";
 
-const ALL = [...friends, ...friendRequests, ...suggestedFriends];
-
-export default function FriendProfile() {
+export default function PublicProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const friend = ALL.find((f) => f.id === String(id));
+  const [data, setData] = useState<PublicProfileResponse | null>(null);
+  const [friendship, setFriendship] = useState<FriendshipStatus>("none");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  if (!friend) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <Pressable hitSlop={8} onPress={() => router.back()}>
-            <Icon name="arrow-back" size={24} color={colors.textMuted} />
+  const load = useCallback(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<PublicProfileResponse>(`/profile/${id}`)
+      .then((res) => {
+        if (!cancelled) {
+          setData(res);
+          setFriendship(res.friendship);
+        }
+      })
+      .catch((e) =>
+        !cancelled &&
+        setError(
+          e instanceof ApiClientError ? (e.status === 404 ? "User not found." : e.message) : "Could not load this profile.",
+        ),
+      )
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  useEffect(load, [load]);
+
+  const addFriend = () => {
+    setBusy(true);
+    api
+      .post("/friends/requests", { receiverId: id })
+      .then(() => setFriendship("outgoing"))
+      .catch((e) => Alert.alert("Couldn't send request", e instanceof ApiClientError ? e.message : "Try again."))
+      .finally(() => setBusy(false));
+  };
+
+  const unfriend = () => {
+    Alert.alert("Remove friend?", "You'll need to send a new request to reconnect.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          setBusy(true);
+          api
+            .delete(`/friends/${id}`)
+            .then(() => setFriendship("none"))
+            .catch((e) => Alert.alert("Failed", e instanceof ApiClientError ? e.message : "Try again."))
+            .finally(() => setBusy(false));
+        },
+      },
+    ]);
+  };
+
+  const action = () => {
+    switch (friendship) {
+      case "self":
+        return (
+          <Pressable style={styles.primaryBtn} onPress={() => router.push("/profile/edit")}>
+            <Text style={styles.primaryBtnText}>Edit Profile</Text>
           </Pressable>
-          <Text style={typography.sectionTitle}>Profile</Text>
-          <View style={{ width: 24 }} />
-        </View>
-        <Text style={[typography.body, { padding: spacing.lg }]}>Explorer not found.</Text>
-      </SafeAreaView>
-    );
-  }
+        );
+      case "friends":
+        return (
+          <Pressable style={styles.outlineBtn} onPress={unfriend} disabled={busy}>
+            <Icon name="how-to-reg" size={18} color={colors.primary} />
+            <Text style={styles.outlineBtnText}>Friends</Text>
+          </Pressable>
+        );
+      case "outgoing":
+        return (
+          <View style={styles.disabledBtn}>
+            <Text style={styles.disabledBtnText}>Requested</Text>
+          </View>
+        );
+      case "incoming":
+        return (
+          <Pressable style={styles.primaryBtn} onPress={() => router.push("/friends")}>
+            <Text style={styles.primaryBtnText}>Respond to Request</Text>
+          </Pressable>
+        );
+      default:
+        return (
+          <Pressable style={styles.primaryBtn} onPress={addFriend} disabled={busy}>
+            <Icon name="person-add" size={18} color={colors.onPrimary} />
+            <Text style={styles.primaryBtnText}>Add Friend</Text>
+          </Pressable>
+        );
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -44,61 +117,20 @@ export default function FriendProfile() {
           <Icon name="arrow-back" size={24} color={colors.textMuted} />
         </Pressable>
         <Text style={typography.sectionTitle}>Profile</Text>
-        <Icon name="more-vert" size={24} color={colors.textMuted} />
+        <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.top}>
-          <Image source={{ uri: friend.avatarUrl }} style={styles.avatar} />
-          <Text style={[typography.sectionTitle, { marginTop: spacing.md }]}>{friend.name}</Text>
-          <Text style={typography.caption}>{friend.username}</Text>
-          <View style={styles.actions}>
-            <Pressable style={styles.primaryBtn}>
-              <Icon name="person-add" size={18} color={colors.onPrimary} />
-              <Text style={styles.primaryText}>Add Friend</Text>
-            </Pressable>
-            <Pressable style={styles.ghostBtn}>
-              <Icon name="chat-bubble-outline" size={20} color={colors.primary} />
-            </Pressable>
-          </View>
+      {loading ? (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+      ) : error || !data ? (
+        <View style={styles.notice}>
+          <Icon name="cloud-off" size={32} color={colors.textMuted} />
+          <Text style={styles.noticeText}>{error ?? "Profile unavailable."}</Text>
         </View>
-
-        <View style={styles.statRow}>
-          <Stat value={friend.species} label="Species" />
-          <Stat value={friend.mutuals ?? 0} label="Mutual" />
-          <Stat value={Math.round(friend.species * 14)} label="Points" />
-        </View>
-
-        <SectionTitle>Recent Discoveries</SectionTitle>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.discoveryRow}>
-          {recentDiscoveryIds.map((pid) => {
-            const p = plantById(pid)!;
-            return (
-              <Pressable key={pid} style={styles.discoveryCard} onPress={() => router.push(`/plant/${pid}`)}>
-                <View style={styles.discoveryImgWrap}>
-                  {p.imageUrl ? <Image source={{ uri: p.imageUrl }} style={styles.discoveryImg} /> : null}
-                  <View style={styles.discoveryBadge}>
-                    <RarityBadge rarity={p.rarity} />
-                  </View>
-                </View>
-                <Text style={[typography.body, { fontWeight: "600" }]} numberOfLines={1}>
-                  {p.commonName}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </ScrollView>
+      ) : (
+        <ProfileContent data={data} headerAction={action()} />
+      )}
     </SafeAreaView>
-  );
-}
-
-function Stat({ value, label }: { value: number; label: string }) {
-  return (
-    <View style={styles.statCard}>
-      <Text style={styles.statValue}>{value.toLocaleString()}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
   );
 }
 
@@ -111,10 +143,6 @@ const styles = StyleSheet.create({
     height: 56,
     paddingHorizontal: spacing.md,
   },
-  scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
-  top: { alignItems: "center", marginTop: spacing.md, marginBottom: spacing.xl },
-  avatar: { width: 104, height: 104, borderRadius: 52, borderWidth: 4, borderColor: colors.surfaceLowest, backgroundColor: colors.surfaceVariant },
-  actions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   primaryBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -124,32 +152,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 10,
   },
-  primaryText: { ...typography.body, color: colors.onPrimary, fontWeight: "600" },
-  ghostBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: colors.sage,
-    backgroundColor: colors.surfaceLowest,
+  primaryBtnText: { ...typography.body, color: colors.onPrimary, fontWeight: "600" },
+  outlineBtn: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-  },
-  statRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
-  statCard: {
-    flex: 1,
+    gap: 6,
     backgroundColor: colors.surfaceLowest,
-    borderColor: colors.sage,
     borderWidth: 1,
-    borderRadius: radius.card,
-    paddingVertical: spacing.md,
-    alignItems: "center",
+    borderColor: colors.primary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
   },
-  statValue: { ...typography.sectionTitle },
-  statLabel: { ...typography.caption },
-  discoveryRow: { gap: spacing.md, paddingBottom: spacing.sm },
-  discoveryCard: { width: 150 },
-  discoveryImgWrap: { borderRadius: radius.image, overflow: "hidden", marginBottom: spacing.sm },
-  discoveryImg: { width: "100%", height: 110, backgroundColor: colors.surfaceVariant },
-  discoveryBadge: { position: "absolute", top: spacing.sm, left: spacing.sm },
+  outlineBtnText: { ...typography.body, color: colors.primary, fontWeight: "600" },
+  disabledBtn: {
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: radius.pill,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  disabledBtnText: { ...typography.body, color: colors.textMuted, fontWeight: "600" },
+  notice: { alignItems: "center", gap: spacing.md, paddingVertical: spacing.xxl, paddingHorizontal: spacing.lg },
+  noticeText: { ...typography.body, color: colors.textMuted, textAlign: "center" },
 });

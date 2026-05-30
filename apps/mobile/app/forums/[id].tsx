@@ -1,104 +1,93 @@
-// Forum thread (Stitch Forum Thread). Original post card with image + reactions,
-// then a comment list including a nested author reply, and a fixed reply input bar.
-import { View, Text, StyleSheet, ScrollView, Pressable, Image, TextInput } from "react-native";
-import { useRouter } from "expo-router";
+// Forum category view (design §8.14). The route param is a FORUM_CATEGORIES key; this lists
+// PUBLIC posts in that category (GET /posts?scope=forum&category=KEY). A "thread" is a post —
+// tapping one opens /post/:id with its comments. The FAB starts a new thread in this category.
+import { useCallback, useState } from "react";
+import { ScrollView, View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import type { Post, PostsResponse } from "@sproutgo/shared";
+import { FORUM_CATEGORIES } from "@sproutgo/shared";
 import { colors, spacing, radius, typography } from "@/theme";
 import { Icon } from "@/components/Icon";
 import { Avatar } from "@/components/ui";
-import { forumThread as thread } from "@/lib/mockData";
+import { api, ApiClientError } from "@/lib/api";
+import { timeAgo } from "@/lib/time";
 
-export default function ForumThread() {
+export default function ForumCategory() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const category = FORUM_CATEGORIES.find((c) => c.key === id);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<PostsResponse>(`/posts?scope=forum&category=${id}`)
+      .then((res) => !cancelled && setPosts(res.posts))
+      .catch((e) =>
+        !cancelled && setError(e instanceof ApiClientError ? e.message : "Could not load this forum."),
+      )
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  useFocusEffect(load);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <Pressable hitSlop={8} onPress={() => router.back()}>
-          <Icon name="arrow-back" size={24} color={colors.textMuted} />
+          <Icon name="arrow-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={typography.sectionTitle}>Forum</Text>
-        <Icon name="more-vert" size={24} color={colors.textMuted} />
+        <Text style={typography.sectionTitle} numberOfLines={1}>
+          {category?.label ?? "Forum"}
+        </Text>
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.post}>
-          <View style={styles.postHead}>
-            <View style={styles.author}>
-              <Avatar uri={thread.avatarUrl} size={40} />
-              <View>
-                <Text style={styles.authorName}>{thread.author}</Text>
-                <Text style={typography.caption}>{thread.timeAgo}</Text>
-              </View>
-            </View>
-            <View style={styles.tag}>
-              <Text style={styles.tagText}>{thread.tag}</Text>
-            </View>
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+        ) : error ? (
+          <View style={styles.notice}>
+            <Icon name="cloud-off" size={32} color={colors.textMuted} />
+            <Text style={styles.noticeText}>{error}</Text>
+            <Pressable style={styles.retryBtn} onPress={load}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
           </View>
-          <Text style={[typography.sectionTitle, { marginBottom: spacing.sm }]}>{thread.title}</Text>
-          <Text style={[typography.body, { color: colors.textMuted, marginBottom: spacing.md }]}>
-            {thread.body}
-          </Text>
-          <Image source={{ uri: thread.imageUrl }} style={styles.postImage} />
-          <View style={styles.reactions}>
-            <View style={styles.reaction}>
-              <Icon name="thumb-up" size={20} color={colors.textMuted} />
-              <Text style={typography.caption}>{thread.likes}</Text>
-            </View>
-            <View style={styles.reaction}>
-              <Icon name="chat-bubble-outline" size={20} color={colors.textMuted} />
-              <Text style={typography.caption}>{thread.replies} Replies</Text>
-            </View>
-            <View style={{ flex: 1 }} />
-            <Icon name="flag" size={20} color={colors.textMuted} />
+        ) : posts.length === 0 ? (
+          <View style={styles.notice}>
+            <Icon name="forum" size={32} color={colors.textMuted} />
+            <Text style={styles.noticeText}>No threads yet. Start the first discussion!</Text>
           </View>
-        </View>
-
-        <Text style={[typography.body, styles.commentsLabel]}>Comments</Text>
-        {thread.comments.map((c) => (
-          <View
-            key={c.id}
-            style={[styles.comment, c.nested && styles.commentNested]}
-          >
-            <Avatar uri={c.avatarUrl} size={32} />
-            <View style={{ flex: 1 }}>
-              <View style={styles.commentHead}>
-                <View style={styles.commentNameRow}>
-                  <Text style={styles.commentName}>{c.author}</Text>
-                  {c.isAuthor ? (
-                    <View style={styles.authorChip}>
-                      <Text style={styles.authorChipText}>Author</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text style={typography.caption}>{c.timeAgo}</Text>
+        ) : (
+          posts.map((p) => (
+            <Pressable key={p.id} style={styles.threadCard} onPress={() => router.push(`/post/${p.id}`)}>
+              <Avatar uri={p.author.avatarUrl ?? ""} size={36} />
+              <View style={{ flex: 1 }}>
+                <Text style={[typography.body, { fontWeight: "600", color: colors.text }]} numberOfLines={1}>
+                  {p.title ?? p.caption ?? "Untitled thread"}
+                </Text>
+                <Text style={typography.caption} numberOfLines={1}>
+                  {p.author.username} · {timeAgo(p.createdAt)} · {p.commentCount} replies
+                </Text>
               </View>
-              <Text style={[typography.body, { color: colors.textMuted, marginVertical: spacing.xs }]}>
-                {c.body}
-              </Text>
-              <View style={styles.commentActions}>
-                <View style={styles.reaction}>
-                  <Icon name="thumb-up" size={16} color={colors.textMuted} />
-                  <Text style={typography.caption}>{c.likes}</Text>
-                </View>
-                <Text style={styles.replyLink}>Reply</Text>
-              </View>
-            </View>
-          </View>
-        ))}
+              <Icon name="chevron-right" size={22} color={colors.textMuted} />
+            </Pressable>
+          ))
+        )}
       </ScrollView>
 
-      <SafeAreaView edges={["bottom"]} style={styles.inputBar}>
-        <Icon name="image" size={24} color={colors.textMuted} />
-        <TextInput
-          style={styles.input}
-          placeholder="Add a comment..."
-          placeholderTextColor={colors.textMuted}
-        />
-        <Pressable style={styles.postBtn}>
-          <Text style={styles.postBtnText}>Post</Text>
-        </Pressable>
-      </SafeAreaView>
+      <Pressable style={styles.fab} onPress={() => router.push(`/post/new?category=${id}`)}>
+        <Icon name="add" size={28} color={colors.onPrimary} />
+      </Pressable>
     </SafeAreaView>
   );
 }
@@ -109,81 +98,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: spacing.md,
-    height: 56,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surfaceVariant,
-  },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xl },
-  post: {
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: radius.cardLarge,
-    borderWidth: 1,
-    borderColor: colors.sage,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  postHead: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: spacing.sm },
-  author: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  authorName: { ...typography.body, fontWeight: "600", color: colors.text },
-  tag: {
-    backgroundColor: colors.mint,
-    borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  tagText: { ...typography.badge, color: colors.primary },
-  postImage: { width: "100%", height: 200, borderRadius: radius.image, marginBottom: spacing.md, backgroundColor: colors.surfaceVariant },
-  reactions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceVariant,
-    paddingTop: spacing.sm,
-  },
-  reaction: { flexDirection: "row", alignItems: "center", gap: 4 },
-  commentsLabel: { fontWeight: "600", color: colors.text, marginBottom: spacing.md },
-  comment: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: radius.button,
-    borderWidth: 1,
-    borderColor: colors.surfaceVariant,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  commentNested: { marginLeft: spacing.lg, backgroundColor: colors.surface },
-  commentHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  commentNameRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  commentName: { ...typography.caption, fontWeight: "600", color: colors.text },
-  authorChip: { backgroundColor: colors.mint, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  authorChipText: { fontSize: 10, fontWeight: "700", color: colors.primary, textTransform: "uppercase", letterSpacing: 0.5 },
-  commentActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  replyLink: { ...typography.caption, fontWeight: "600", color: colors.textMuted },
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    backgroundColor: colors.surfaceLowest,
-    borderTopWidth: 1,
-    borderTopColor: colors.outlineVariant,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: colors.surfaceLow,
-    borderWidth: 1,
-    borderColor: colors.sage,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    ...typography.body,
   },
-  postBtn: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  postBtnText: { ...typography.badge, color: colors.onPrimary },
+  scroll: { paddingHorizontal: spacing.lg, paddingBottom: 120, gap: spacing.sm },
+  threadCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surfaceLowest,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.sage,
+    padding: spacing.md,
+  },
+  fab: {
+    position: "absolute",
+    right: spacing.lg,
+    bottom: 40,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 5,
+  },
+  notice: { alignItems: "center", gap: spacing.md, paddingVertical: spacing.xxl, paddingHorizontal: spacing.lg },
+  noticeText: { ...typography.body, color: colors.textMuted, textAlign: "center" },
+  retryBtn: { backgroundColor: colors.primary, borderRadius: radius.button, paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },
+  retryText: { ...typography.body, color: colors.onPrimary, fontWeight: "600" },
 });

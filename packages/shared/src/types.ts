@@ -184,3 +184,121 @@ export interface FriendRequest {
   createdAt: string;
   respondedAt: string | null;
 }
+
+// === M4 — Social layer ======================================================
+
+// Lean author/user summary embedded in posts, comments, friend lists, search results.
+export interface UserSummary {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+  bio: string | null;
+}
+
+// A social feed / forum post (API_CONTRACT §social). `imageUrl` is a short-lived signed URL
+// minted server-side (the observations bucket is private), null when there's no image.
+// `plant` is the lean shape the "View Plant" link needs. `likedByMe`/`isOwn`/`canDelete` are
+// computed for the requesting viewer.
+export interface Post {
+  id: string;
+  author: UserSummary;
+  plantId: string | null;
+  imageUrl: string | null;
+  title: string | null;
+  caption: string | null;
+  category: ForumCategory | null;
+  generalLocation: string | null;
+  privacy: Privacy;
+  likeCount: number;
+  commentCount: number;
+  likedByMe: boolean;
+  isOwn: boolean;
+  canDelete: boolean; // owner OR admin
+  plant: {
+    id: string;
+    commonName: string | null;
+    scientificName: string;
+    rarity: Rarity;
+    imageUrl: string | null;
+  } | null;
+  createdAt: string;
+}
+
+export interface Comment {
+  id: string;
+  postId: string;
+  author: UserSummary;
+  body: string;
+  createdAt: string;
+}
+
+// GET /posts?scope=&category= — offset-paginated feed.
+export interface PostsResponse {
+  posts: Post[];
+  limit: number;
+  offset: number;
+}
+
+// GET /posts/:id — a post + its comments (a forum "thread" is this for a category post).
+export interface PostDetailResponse {
+  post: Post;
+  comments: Comment[];
+}
+
+// POST/DELETE /posts/:id/like
+export interface LikeResponse {
+  liked: boolean;
+  likeCount: number;
+}
+
+// A friend request paired with the counterparty (sender for incoming, receiver for outgoing).
+export interface FriendRequestView {
+  id: string;
+  status: FriendStatus;
+  createdAt: string;
+  user: UserSummary;
+}
+
+export interface FriendRequestsResponse {
+  box: "incoming" | "outgoing";
+  requests: FriendRequestView[];
+}
+
+export interface FriendsResponse {
+  friends: UserSummary[];
+}
+
+export interface UserSearchResponse {
+  users: UserSummary[];
+}
+
+// Friendship state of a profile relative to the requesting viewer.
+export type FriendshipStatus = "self" | "friends" | "incoming" | "outgoing" | "none";
+
+export interface SocialProfileStats extends ProfileStats {
+  postsCount: number;
+  friendsCount: number;
+}
+
+// GET /profile/:id — public profile + social context. Used for both other users and self
+// (friendship === "self"). isAdmin is never exposed here.
+export interface PublicProfileResponse {
+  profile: Omit<Profile, "isAdmin">;
+  stats: SocialProfileStats;
+  friendship: FriendshipStatus;
+  recentDiscoveries: PlantDexEntry[];
+  posts: Post[];
+}
+
+// Forum categories are a fixed client-side list stored in Post.category (no Forum/Thread
+// models — forums are category-scoped posts, per API_CONTRACT). Keep in sync with the API's
+// forumCategorySchema.
+export const FORUM_CATEGORIES = [
+  { key: "PLANT_ID", label: "Plant ID Help" },
+  { key: "LOCAL_TRAILS", label: "Local Trails" },
+  { key: "RARE_FINDS", label: "Rare Finds" },
+  { key: "PHOTOGRAPHY", label: "Nature Photography" },
+  { key: "GENERAL", label: "General Discussion" },
+] as const;
+
+export type ForumCategory = (typeof FORUM_CATEGORIES)[number]["key"];

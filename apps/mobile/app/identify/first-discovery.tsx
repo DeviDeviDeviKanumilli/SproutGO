@@ -68,7 +68,14 @@ export default function FirstDiscovery() {
         </View>
 
         <View style={styles.actions}>
-          <Pressable style={styles.primaryBtn} onPress={() => router.replace("/post/new")}>
+          <Pressable
+            style={styles.primaryBtn}
+            onPress={() =>
+              router.replace(
+                result ? `/post/new?observationId=${result.observation.id}` : "/post/new",
+              )
+            }
+          >
             <Icon name="ios-share" size={20} color={colors.onPrimary} />
             <Text style={styles.primaryText}>Share Discovery</Text>
           </Pressable>

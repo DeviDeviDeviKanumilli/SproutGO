@@ -126,3 +126,97 @@ export function parseBbox(raw: string | null): BboxInput | null {
   const parsed = bboxSchema.safeParse({ minLng, minLat, maxLng, maxLat });
   return parsed.success ? parsed.data : null;
 }
+
+// === M4 — Social layer ======================================================
+
+// Forum categories are stored in Post.category (no Forum/Thread models). Keep in sync with
+// packages/shared FORUM_CATEGORIES.
+export const forumCategorySchema = z.enum([
+  "PLANT_ID",
+  "LOCAL_TRAILS",
+  "RARE_FINDS",
+  "PHOTOGRAPHY",
+  "GENERAL",
+]);
+
+// POST /posts — share a discovery or open a forum thread. Either references an existing
+// observation (image/plant inherited server-side) or carries its own imagePath/plantId.
+export const createPostSchema = z
+  .object({
+    observationId: z.string().uuid().optional(),
+    plantId: z.string().uuid().optional(),
+    imagePath: z
+      .string()
+      .trim()
+      .min(1)
+      .regex(/^[A-Za-z0-9._\-/]+$/, "imagePath has invalid characters")
+      .refine((p) => !p.includes(".."), "imagePath may not contain '..'")
+      .optional(),
+    title: z.string().trim().max(120).optional(),
+    caption: z.string().trim().max(2000).optional(),
+    category: forumCategorySchema.optional(),
+    generalLocation: z.string().trim().max(120).optional(),
+    privacy: z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]).default("PUBLIC"),
+  })
+  .refine((d) => d.observationId || d.plantId || d.caption || d.title, {
+    message: "A post needs at least an observation, plant, caption, or title",
+  });
+
+export type CreatePostInput = z.infer<typeof createPostSchema>;
+
+// GET /posts?scope=&category=&limit=&offset=
+export const POSTS_PAGE_DEFAULT = 20;
+export const POSTS_PAGE_MAX = 50;
+export const postsScopeSchema = z.enum(["feed", "friends", "forum"]);
+export type PostsScope = z.infer<typeof postsScopeSchema>;
+
+export const postsQuerySchema = z.object({
+  scope: postsScopeSchema.default("feed"),
+  category: forumCategorySchema.optional(),
+  limit: z.coerce.number().int().min(1).max(POSTS_PAGE_MAX).default(POSTS_PAGE_DEFAULT),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export type PostsQueryInput = z.infer<typeof postsQuerySchema>;
+
+export function parsePostsQuery(params: URLSearchParams): PostsQueryInput | null {
+  const raw: Record<string, string> = {};
+  for (const key of ["scope", "category", "limit", "offset"] as const) {
+    const v = params.get(key);
+    if (v != null && v.trim() !== "") raw[key] = v.trim();
+  }
+  const parsed = postsQuerySchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+// POST /posts/:id/comments
+export const createCommentSchema = z.object({
+  body: z.string().trim().min(1, "Comment cannot be empty").max(2000),
+});
+export type CreateCommentInput = z.infer<typeof createCommentSchema>;
+
+// POST /posts/:id/report
+export const reportSchema = z.object({
+  reason: z.string().trim().min(1, "A reason is required").max(500),
+});
+export type ReportInput = z.infer<typeof reportSchema>;
+
+// POST /friends/requests
+export const friendRequestSchema = z.object({
+  receiverId: z.string().uuid("receiverId must be a valid id"),
+});
+export type FriendRequestInput = z.infer<typeof friendRequestSchema>;
+
+// PATCH /friends/requests/:id
+export const friendRequestActionSchema = z.object({
+  action: z.enum(["accept", "reject"]),
+});
+export type FriendRequestActionInput = z.infer<typeof friendRequestActionSchema>;
+
+// GET /users/search?q= and GET /friends/requests?box=
+export const userSearchSchema = z.object({
+  q: z.string().trim().min(1, "search query is required").max(50),
+});
+
+export const requestBoxSchema = z.enum(["incoming", "outgoing"]);
+export type RequestBox = z.infer<typeof requestBoxSchema>;

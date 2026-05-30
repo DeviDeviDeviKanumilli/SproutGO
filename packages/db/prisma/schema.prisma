@@ -91,6 +91,7 @@ model Profile {
   chatMessages     ChatMessage[]
   sentRequests     FriendRequest[] @relation("SentRequests")
   receivedRequests FriendRequest[] @relation("ReceivedRequests")
+  reports          Report[]
 }
 
 /// Global Library. scientificName is the primary match key for AI results.
@@ -201,6 +202,7 @@ model Post {
   plant       Plant?       @relation(fields: [plantId], references: [id])
   likes       Like[]
   comments    Comment[]
+  reports     Report[]
 
   @@index([userId])
   @@index([category])
@@ -270,4 +272,20 @@ model ChatMessage {
   plant Plant   @relation(fields: [plantId], references: [id])
 
   @@index([userId, plantId, createdAt])
+}
+
+/// Content report (moderation MVP). A user flags a post; admins review + delete.
+/// Fire-and-forget from the client (POST /posts/:id/report → 204), but persisted so there's
+/// a real moderation trail rather than a logged no-op.
+model Report {
+  id         String   @id @default(uuid()) @db.Uuid
+  reporterId String   @db.Uuid
+  postId     String   @db.Uuid
+  reason     String
+  createdAt  DateTime @default(now())
+
+  reporter Profile @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  post     Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
 }

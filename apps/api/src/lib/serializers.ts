@@ -5,6 +5,8 @@ import type {
   Plant as PlantRow,
   Observation as ObservationRow,
   PlantDexEntry as PlantDexEntryRow,
+  Post as PostRow,
+  Comment as CommentRow,
 } from "@sproutgo/db";
 import type {
   Profile,
@@ -14,6 +16,10 @@ import type {
   Observation,
   PlantDexEntry,
   ObservationMarker,
+  UserSummary,
+  Post,
+  Comment,
+  ForumCategory,
 } from "@sproutgo/shared";
 import { snapToGrid, shouldFuzz } from "./geo";
 
@@ -89,6 +95,63 @@ export function serializePlantDexEntry(
     firstDiscoveredAt: row.firstDiscoveredAt.toISOString(),
     timesObserved: row.timesObserved,
     plant: serializePlant(row.plant),
+  };
+}
+
+// --- M4 social serializers --------------------------------------------------
+
+export function serializeUserSummary(row: ProfileRow): UserSummary {
+  return {
+    id: row.id,
+    username: row.username,
+    avatarUrl: row.avatarUrl,
+    bio: row.bio,
+  };
+}
+
+// A feed/forum post for the wire. The image lives in the private observations bucket, so the
+// route mints a short-lived signed URL and passes it in (null when no image). Viewer-relative
+// flags (likedByMe / isOwn / canDelete) are computed by the route, which knows the caller.
+export function serializePost(
+  row: PostRow & { user: ProfileRow; plant: PlantRow | null },
+  opts: { signedImageUrl: string | null; likedByMe: boolean; viewerId: string; viewerIsAdmin: boolean },
+): Post {
+  const isOwn = row.userId === opts.viewerId;
+  return {
+    id: row.id,
+    author: serializeUserSummary(row.user),
+    plantId: row.plantId,
+    imageUrl: opts.signedImageUrl,
+    title: row.title,
+    caption: row.caption,
+    category: (row.category as ForumCategory | null) ?? null,
+    generalLocation: row.generalLocation,
+    privacy: row.privacy,
+    likeCount: row.likeCount,
+    commentCount: row.commentCount,
+    likedByMe: opts.likedByMe,
+    isOwn,
+    canDelete: isOwn || opts.viewerIsAdmin,
+    plant: row.plant
+      ? {
+          id: row.plant.id,
+          commonName: row.plant.commonName,
+          scientificName: row.plant.scientificName,
+          rarity: row.plant.rarity,
+          imageUrl: row.plant.imageUrl,
+        }
+      : null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function serializeComment(row: CommentRow & { user: ProfileRow }): Comment {
+  return {
+    id: row.id,
+    postId: row.postId,
+    author: serializeUserSummary(row.user),
+    body: row.body,
+    createdAt: row.createdAt.toISOString(),
   };
 }
 
