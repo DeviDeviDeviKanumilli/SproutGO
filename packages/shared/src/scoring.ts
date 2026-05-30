@@ -17,6 +17,11 @@ export const SCORING = {
   captureWindowMax: 10, // max captures per rolling window
   dailyCaptureCap: 100, // max total captures per UTC day
   idempotencyWindowSeconds: 3600, // re-submitting the same imagePath within 1h is a no-op
+  // Plant-chat limits (AI_INTEGRATION.md §cost) — protect OpenAI spend; counted from
+  // persisted ChatMessage rows.
+  chatWindowSeconds: 60,
+  chatWindowMax: 15, // max chat turns per rolling window
+  chatHistoryTurns: 12, // recent exchanges replayed into the prompt + loaded on open
 } as const;
 
 // AI auto-create confidence threshold (AI_INTEGRATION.md / SPEC §3.8, §7.3).

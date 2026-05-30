@@ -220,3 +220,10 @@ export const userSearchSchema = z.object({
 
 export const requestBoxSchema = z.enum(["incoming", "outgoing"]);
 export type RequestBox = z.infer<typeof requestBoxSchema>;
+
+// POST /chat/:plantId — one message to a plant persona. History is server-side (persisted),
+// so the body is just the new message.
+export const chatMessageSchema = z.object({
+  message: z.string().trim().min(1, "Say something to the plant").max(1000),
+});
+export type ChatMessageInput = z.infer<typeof chatMessageSchema>;

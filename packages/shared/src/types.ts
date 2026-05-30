@@ -302,3 +302,22 @@ export const FORUM_CATEGORIES = [
 ] as const;
 
 export type ForumCategory = (typeof FORUM_CATEGORIES)[number]["key"];
+
+// === M5 — Plant chat ========================================================
+
+// One turn in a plant conversation. "plant" is the AI persona; "user" is the caller.
+export interface ChatTurn {
+  role: "user" | "plant";
+  content: string;
+  createdAt: string; // ISO 8601
+}
+
+// GET /chat/:plantId — recent conversation, flattened to alternating turns (oldest first).
+export interface ChatHistoryResponse {
+  messages: ChatTurn[];
+}
+
+// POST /chat/:plantId → the plant's reply (history is persisted server-side).
+export interface ChatReply {
+  reply: string;
+}

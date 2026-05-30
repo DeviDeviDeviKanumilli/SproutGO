@@ -7,6 +7,7 @@ import {
   friendRequestSchema,
   friendRequestActionSchema,
   userSearchSchema,
+  chatMessageSchema,
   POSTS_PAGE_DEFAULT,
   POSTS_PAGE_MAX,
 } from "./validation";
@@ -77,5 +78,11 @@ describe("comment / report / friend schemas", () => {
   it("user search requires a non-empty query", () => {
     expect(userSearchSchema.safeParse({ q: "" }).success).toBe(false);
     expect(userSearchSchema.safeParse({ q: "ada" }).success).toBe(true);
+  });
+
+  it("chat message must be non-empty and bounded", () => {
+    expect(chatMessageSchema.safeParse({ message: "" }).success).toBe(false);
+    expect(chatMessageSchema.safeParse({ message: "hello!" }).success).toBe(true);
+    expect(chatMessageSchema.safeParse({ message: "x".repeat(1001) }).success).toBe(false);
   });
 });

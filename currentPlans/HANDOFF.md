@@ -39,7 +39,24 @@ its env vars not set. Migration file above not committed. Mapbox token absent.
 
 ## Where the project stands
 
-**M4 — Social layer is now wired in code, against a LIVE database.** The Supabase env was
+**M5 — Plant chat is now wired (the final MVP milestone, criterion #15).** Converse with a
+discovered plant's persona:
+- **Backend** — `POST /chat/:plantId` (send a message → reply) and `GET /chat/:plantId`
+  (recent history). PlantDex-gated (403 until the species is discovered); grounded persona
+  system prompt built deterministically from rarity/native-status/type
+  (`lib/chat/persona.ts`) injecting only Library facts; per-user rate limit counted from
+  persisted rows. History is **persisted** as `ChatMessage` (resolves OPEN_QUESTIONS #5) so it
+  survives restarts and powers the rate limit. Provider is swappable like identify
+  (`getPlantChatter()` → OpenAI `gpt-4o-mini`, or an offline stub in dev/test; never the stub
+  in production).
+- **Mobile** — `chat/[id]` is wired: loads the plant header + history, sends messages with a
+  typing indicator and suggestion chips, and shows a "discover first" lock state on 403. No
+  more mock fixtures in the chat screen.
+- This was the last screen on mock data. **All 15 MVP completion criteria are now wired in
+  code.** Remaining mock usage is only the Settings screen (UI-only by design) + the onboarding
+  slides constant.
+
+Earlier: **M4 — Social layer is now wired in code, against a LIVE database.** The Supabase env was
 provisioned, so the schema was migrated and the Library seeded for real:
 - **Live DB** — the schema is migrated and the Library seeded (21 species); the private
   `observations` Storage bucket exists. All three migration files are now committed in
