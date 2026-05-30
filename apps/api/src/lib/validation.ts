@@ -38,3 +38,29 @@ export const createObservationSchema = z.object({
 });
 
 export type CreateObservationInput = z.infer<typeof createObservationSchema>;
+
+// GET /observations?bbox=minLng,minLat,maxLng,maxLat — map bounding-box query.
+// Parse the CSV string into this shape before validating.
+export const bboxSchema = z
+  .object({
+    minLng: z.number().min(-180).max(180),
+    minLat: z.number().min(-90).max(90),
+    maxLng: z.number().min(-180).max(180),
+    maxLat: z.number().min(-90).max(90),
+  })
+  .refine((b) => b.minLng <= b.maxLng && b.minLat <= b.maxLat, {
+    message: "bbox min must be <= max",
+  });
+
+export type BboxInput = z.infer<typeof bboxSchema>;
+
+// Parse a `bbox=minLng,minLat,maxLng,maxLat` query string into validated numbers.
+// Returns null on any malformed/out-of-range input so the route can 400.
+export function parseBbox(raw: string | null): BboxInput | null {
+  if (!raw) return null;
+  const parts = raw.split(",").map((s) => Number(s.trim()));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+  const [minLng, minLat, maxLng, maxLat] = parts;
+  const parsed = bboxSchema.safeParse({ minLng, minLat, maxLng, maxLat });
+  return parsed.success ? parsed.data : null;
+}

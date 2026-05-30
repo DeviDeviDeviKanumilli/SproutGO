@@ -13,7 +13,9 @@ import type {
   Plant,
   Observation,
   PlantDexEntry,
+  ObservationMarker,
 } from "@sproutgo/shared";
+import { snapToGrid, shouldFuzz } from "./geo";
 
 export function serializeProfile(row: ProfileRow): Profile {
   return {
@@ -84,5 +86,44 @@ export function serializePlantDexEntry(
     firstDiscoveredAt: row.firstDiscoveredAt.toISOString(),
     timesObserved: row.timesObserved,
     plant: serializePlant(row.plant),
+  };
+}
+
+// A map pin for GET /observations?bbox=. The viewer's own observations always carry
+// exact coordinates; for everyone else, rare/sensitive plant coords are snapped to a
+// grid before they leave the backend (R3: fuzzing must happen server-side). Rows are
+// pre-filtered to have non-null lat/long and a linked plant.
+export function serializeObservationMarker(
+  row: ObservationRow & { plant: PlantRow | null },
+  viewerId: string,
+): ObservationMarker {
+  const isOwn = row.userId === viewerId;
+  const rarity = row.plant?.rarity ?? null;
+  const fuzz = !isOwn && shouldFuzz(rarity, row.plant?.nativeStatus ?? null);
+
+  let latitude = row.latitude as number;
+  let longitude = row.longitude as number;
+  if (fuzz) {
+    ({ latitude, longitude } = snapToGrid(latitude, longitude));
+  }
+
+  return {
+    id: row.id,
+    plantId: row.plantId,
+    latitude,
+    longitude,
+    rarity,
+    isOwn,
+    fuzzed: fuzz,
+    plant: row.plant
+      ? {
+          id: row.plant.id,
+          commonName: row.plant.commonName,
+          scientificName: row.plant.scientificName,
+          rarity: row.plant.rarity,
+          imageUrl: row.plant.imageUrl,
+        }
+      : null,
+    createdAt: row.createdAt.toISOString(),
   };
 }

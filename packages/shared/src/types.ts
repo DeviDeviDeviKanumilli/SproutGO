@@ -84,8 +84,33 @@ export interface ObservationResult {
   quotaReached?: boolean;
 }
 
+// A discovery pin on the exploration map (GET /observations?bbox=). Lean by design —
+// only what a marker + its preview sheet need. Coordinates are already privacy-fuzzed
+// server-side for non-owners of rare/sensitive plants (SECURITY_AND_PRIVACY §location).
+export interface ObservationMarker {
+  id: string;
+  plantId: string | null;
+  latitude: number; // fuzzed (snapped to grid) for non-owners when `fuzzed` is true
+  longitude: number;
+  rarity: Rarity | null; // null when UNCERTAIN / no plant linked
+  isOwn: boolean; // viewer is the owner — sees exact coords
+  fuzzed: boolean; // coords were snapped for rare-plant privacy
+  plant: {
+    id: string;
+    commonName: string | null;
+    scientificName: string;
+    rarity: Rarity;
+    imageUrl: string | null;
+  } | null;
+  createdAt: string; // ISO 8601
+}
+
+// GET /observations?bbox= response (API_CONTRACT §observations).
+export interface ObservationsMapResponse {
+  markers: ObservationMarker[];
+}
+
 // A discovered-species entry in a user's PlantDex (DATA_MODEL §PlantDexEntry).
-// Embeds the resolved Plant so the badge grid renders without an extra fetch.
 export interface PlantDexEntry {
   id: string;
   plantId: string;

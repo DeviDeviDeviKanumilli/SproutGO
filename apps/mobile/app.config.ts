@@ -1,8 +1,11 @@
 import type { ExpoConfig } from "expo/config";
 
-// Expo config. NOTE: @rnmapbox/maps does NOT run in Expo Go (TECH_RISKS R1) — a custom
-// EAS dev build is required. The rnmapbox config plugin is added here ahead of M2 so the
-// first dev build is map-ready; the package itself is installed when map work begins.
+// Expo config. @rnmapbox/maps ships its own native code that is NOT bundled into Expo
+// Go, so this app requires a custom dev build to run at all (TECH_RISKS R1, build steps
+// in currentPlans/DEV_BUILD.md). expo-camera/expo-location ARE in Expo Go — Mapbox is the
+// sole forcing function. The rnmapbox download token is a build-time secret
+// (MAPBOX_DOWNLOAD_TOKEN); the runtime map uses a separate public, URL-restricted token
+// (EXPO_PUBLIC_MAPBOX_TOKEN).
 const config: ExpoConfig = {
   name: "SproutGo",
   slug: "sproutgo",
@@ -24,7 +27,20 @@ const config: ExpoConfig = {
     package: "com.sproutgo.app",
     permissions: ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
   },
-  plugins: ["expo-router"],
+  plugins: [
+    "expo-router",
+    [
+      "@rnmapbox/maps",
+      { RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN ?? "" },
+    ],
+    [
+      "expo-location",
+      {
+        locationWhenInUsePermission:
+          "SproutGo uses your location to place plant discoveries on your map.",
+      },
+    ],
+  ],
   extra: {
     // Wired in M2 with a real EAS project id.
     eas: { projectId: "" },

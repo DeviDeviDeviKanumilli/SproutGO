@@ -4,18 +4,23 @@
 // session-only scratch state, intentionally NOT global app state.
 
 import type { ObservationResult } from "@sproutgo/shared";
+import type { Coords } from "./location";
 
 let pendingPhotoUri: string | null = null;
+let pendingCoords: Coords | null = null;
 let lastResult: ObservationResult | null = null;
 
-export function setPendingPhoto(uri: string): void {
+export function setPendingPhoto(uri: string, coords: Coords | null = null): void {
   pendingPhotoUri = uri;
+  pendingCoords = coords;
 }
 
-export function takePendingPhoto(): string | null {
-  const uri = pendingPhotoUri;
+export function takePendingPhoto(): { uri: string; coords: Coords | null } | null {
+  if (!pendingPhotoUri) return null;
+  const out = { uri: pendingPhotoUri, coords: pendingCoords };
   pendingPhotoUri = null;
-  return uri;
+  pendingCoords = null;
+  return out;
 }
 
 export function setLastResult(result: ObservationResult): void {

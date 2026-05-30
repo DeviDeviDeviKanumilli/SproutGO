@@ -5,38 +5,49 @@
 
 ## Where the project stands
 
-M0 — Foundation is complete. **M1 — the discovery loop is now wired end-to-end**
-in code:
-- **Backend** (`91896ff`) — `POST /api/v1/observations` identify→score→PlantDex
-  pipeline + the swappable `PlantIdentifier` interface.
-- **Backend** (this commit) — `GET /api/v1/plantdex/me` (discovered species +
-  stats) and the vitest suite covering the pipeline.
-- **Mobile** (this commit) — live `expo-camera` capture → Supabase Storage
-  upload → `POST /observations` → real result screen → PlantDex grid fetched
-  from `/plantdex/me`. The discovery loop no longer runs on mock fixtures.
+M0 + M1 are complete in code. **M2 — Map & geolocation is now wired** as well:
+- **Backend** — `GET /api/v1/observations?bbox=` returns privacy-filtered discovery
+  pins (own + PUBLIC + accepted-FRIENDS), with rare/sensitive plant coordinates
+  fuzzed server-side (`geo.ts`, ~500m snap-to-grid; resolves OPEN_QUESTIONS #8 for
+  M2). Covered by vitest (geo, marker serializer, bbox validation).
+- **Mobile** — capture now grabs best-effort GPS (`expo-location`) and threads
+  lat/long into `POST /observations`; the Map tab is a real `@rnmapbox/maps` map
+  (rarity markers, user-location dot, marker preview sheet, location-denied
+  fallback) fed by the bbox endpoint, replacing the mock grid.
 
-**Still UI-only / mock-backed:** the PlantDex detail screen (`plant/[id]`,
-reached via the result screen's "View PlantDex Entry"), plus some M3/M4 screens
-(forum thread, plant chat). M2 (map richness) and the rest of M3–M5 remain. See
-`currentPlans/BUILD_MILESTONES.md` for full sequencing.
+Earlier: M1 — `POST /observations` identify→score→PlantDex pipeline + swappable
+`PlantIdentifier`, `GET /plantdex/me`, and the live capture→upload→result→PlantDex
+flow.
+
+**Project is now curated for a custom dev build (Xcode).** `@rnmapbox/maps` cannot
+run in Expo Go, so the app needs a dev build to launch — see the new
+**`currentPlans/DEV_BUILD.md`** for the full local-iOS (recommended on this Mac:
+Xcode 26.3 + CocoaPods already present) and EAS-cloud paths. Added `expo-dev-client`,
+`apps/mobile/eas.json`, and `prebuild`/`prebuild:ios` npm scripts.
+
+**Still UI-only / mock-backed:** the PlantDex detail screen (`plant/[id]`, reached
+from both the result screen and the map sheet), plus some M3/M4 screens (forum
+thread, plant chat). M3–M5 remain. See `currentPlans/BUILD_MILESTONES.md`.
 
 The backend pipeline runs today against a **deterministic stub identifier** (no
 credentials needed); the OpenAI vision adapter activates automatically when
 `OPENAI_API_KEY` is set. Library matching still benefits from a seeded Library
 (`LIBRARY_SEED.md`) — unseeded, the stub auto-creates `OPENAI`-sourced Plant rows.
 
-Verified green (this commit):
-- `npm run typecheck` — passes across all 4 workspaces (shared, db, api, mobile)
-- `npm run test` — 15 tests pass (5 shared scoring + 3 stub identifier + 7 pipeline)
+Verified green (latest):
+- `npm run build:shared` + `npm run typecheck` — pass across all 4 workspaces
+- `npm run test` — 27 tests pass (scoring, stub identifier, observation pipeline,
+  geo fuzzing, marker serializer, bbox validation)
 
-**NOT runtime-verified:** the end-to-end mobile loop. `expo-camera` does not run
-in Expo Go (needs a custom EAS dev build, R1), and no Supabase Storage bucket
-(`observations`) or OpenAI key is provisioned. The mobile code compiles and the
-backend is covered by tests via the stub, but capture→upload→unlock has not been
-exercised against live services.
+**NOT runtime-verified:** the Mapbox map and the live GPS→bbox round-trip. Mapbox
+needs the dev build (won't run in Expo Go), and no Mapbox tokens, Supabase Storage
+bucket (`observations`), or OpenAI key are provisioned. Code compiles and the
+backend is covered by tests via the stub, but capture→upload→unlock and the map
+have not been exercised against live services.
 
-External services (Supabase, OpenAI, Mapbox, EAS) are **not provisioned**. Code
-is credential-ready; the user wires `.env` and runs migrations/EAS themselves.
+External services (Supabase, OpenAI, Mapbox, EAS) are **not provisioned**. Code is
+credential-ready; the user wires `.env` (see `.env.example` + `DEV_BUILD.md`) and
+runs migrations/dev build themselves.
 
 ## What changed most recently (this commit — M1 loop wired end-to-end)
 
